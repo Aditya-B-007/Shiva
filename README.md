@@ -79,8 +79,8 @@ Inspired by the ultimate paradox of Hindu mythology—where Lord Shiva represent
 
 ### 1. The Custom Transformer Backbone (`transformer_architecture.py`)
 
-* **GateHyperNetworks:** Rather than relying on rigid, static residual connections, Shiva utilizes zero-initialized hyper-networks to output an optimized, per-token gating signal $\in (0, 1)$. This dynamically opens or closes residual paths based on real-time data data streams ($x \leftarrow x + g \odot F(x)$).
-* **Affective Attention Shifting:** Features an emotionally modulated attention bias where internal valence signals from the `EmotionalCore` directly alter attention logits right before softmax execution ($\text{scores} \leftarrow \text{scores} + \text{valence} \cdot \text{emotional\_gate}$).
+* **GateHyperNetworks:** Rather than relying on rigid, static residual connections, Shiva utilizes zero-initialized hyper-networks to output an optimized, per-token gating signal $\in (0, 1)$. This dynamically opens or closes residual paths based on real-time data data streams.
+* **Affective Attention Shifting:** Features an emotionally modulated attention bias where internal valence signals from the `EmotionalCore` directly alter attention logits right before softmax execution.
 
 ### 2. Dual-Actor Soft-Gate SAC Policy (`shiva_policy.py`)
 
@@ -89,12 +89,12 @@ Inspired by the ultimate paradox of Hindu mythology—where Lord Shiva represent
 
 ### 3. Synthetic Affective Layer (`emotional_core.py`)
 
-* **Homeostatic Drive Tracking:** Keeps track of an internal four-dimensional vector: *[Arousal, Energy, Safety, Engagement]*. Arousal scales up with environmental surprise, while Energy depletes based on action impact. Systemic strain is modeled as the distance from an optimal homeostatic baseline ($\|s - s^*\|_2$).
-* **Valence Network:** A multi-layer network that fuses external environment latents with internal homeostatic state variables to output a continuous, real-time scalar valence score $\in (-1, +1)$.
+* **Homeostatic Drive Tracking:** Keeps track of an internal four-dimensional vector: *[Arousal, Energy, Safety, Engagement]*. Arousal scales up with environmental surprise, while Energy depletes based on action impact. Systemic strain is modeled as the distance from an optimal homeostatic baseline.
+* **Valence Network:** A multi-layer network that fuses external environment latents with internal homeostatic state variables to output a continuous, real-time scalar valence score.
 
 ### 4. Significance-Weighted Episodic Memory (`episodic_memory.py`)
 
-* **Prioritized Dreaming Phase:** Moves away from standard chronological memory buffers in favor of a significance-weighted matrix, where an episode's priority is evaluated as: $\sigma = |\text{mean}(\text{valence\_sequence})| + \text{empowerment\_score}$. Experiences with high emotional salience or high empowerment are replayed preferentially during training dream cycles.
+* **Prioritized Dreaming Phase:** Moves away from standard chronological memory buffers in favor of a significance-weighted matrix. Experiences with high emotional salience or high empowerment are replayed preferentially during training dream cycles.
 * **Narrative Context Encoder:** Runs a recurrent GRU network combined with a learnable, isolated `self_token` parameter. This ensures the agent distinguishes its own internal representation states from ambient environmental data.
 
 ---
@@ -112,9 +112,6 @@ Shiva features built-in architecture-agnostic weight ingestion strategies. Using
 ### 👥 Swarm Consciousness (`SwarmAlgorithmWorkspace.py`)
 
 Implements decentralized swarm coordination modeled on Baars' Global Workspace Theory. Independent `SwarmNodes` register and submit localized conscious states to a central `CrossAttentionAggregator`, which broadcasts a cross-attended consensus vector back to all nodes. Echo chambers and collective pooling collapse are mathematically prevented via a dedicated anti-collapse diversity loss that actively penalizes agents for producing identical latents:
-
-
-$$\mathcal{L}_{\text{div}} = -\text{mean}_{i \neq j} \|z_i - z_j\|_2$$
 
 ### 🦹 Parasitic Activation Interception (`ModelWeightParasiticExtraction.py`)
 
