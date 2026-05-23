@@ -121,6 +121,8 @@ When interacting with proprietary black-box software, quantized parameters, or e
 
 When a node needs to migrate across distributed clusters, cloud environments, or physical edge hardware, Shiva packages its entire consciousness—model weights, episodic memory queues, homeostatic states, and identity tokens—into a cryptographically signed binary payload. Protected by an HMAC-SHA256 signature envelope, the snapshot can be securely transmitted via plain HTTP development hooks or high-performance, streaming mutual-TLS gRPC transport channels.
 
+### OpenClaw integration
+We are working on providing it API endpoints for integrating it with OpenClaw. Once done, we will duly update it over our network.
 ---
 
 ## 🛠️ Technical Specifications
