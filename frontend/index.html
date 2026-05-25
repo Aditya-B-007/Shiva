@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shiva Artificial General Intelligence</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 2rem; border-radius: 8px; border: 1px solid #334155; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+        
+        /* UI Elements */
+        input[type="text"] { width: 70%; padding: 10px; border-radius: 5px; border: 1px solid #475569; background: #020617; color: white; margin-right: 10px; }
+        button { background: #6366f1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #4f46e5; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        
+        /* Status & Layouts */
+        .status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: red; margin-right: 8px; }
+        .status.online { background: #22c55e; }
+        .section { margin-bottom: 2rem; background: #334155; padding: 1.5rem; border-radius: 8px; }
+        
+        /* Model List */
+        .model-card { background: #0f172a; border-left: 4px solid #34d399; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
+        .model-card h4 { margin: 0 0 0.5rem 0; color: #f8fafc; }
+        .tag { background: #475569; font-size: 0.75rem; padding: 3px 6px; border-radius: 3px; margin-right: 5px; }
+        .error-text { color: #f43f5e; margin-top: 10px; display: block; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2><span id="indicator" class="status"></span>Shiva AGI Terminal</h2>
+            <button onclick="pingShiva()">Connect Engine</button>
+        </div>
+        
+        <div class="section" id="attachment-layer" style="opacity: 0.5; pointer-events: none;">
+            <h3>Attach External Model</h3>
+            <p style="font-size: 0.9rem; color: #94a3b8;">Paste the absolute OS path to a local model directory (e.g., C:/models/llama3 or /Users/name/models/mistral)</p>
+            
+            <div style="display: flex; margin-top: 1rem;">
+                <input type="text" id="model_path" placeholder="Absolute directory path...">
+                <button id="attach_btn" onclick="attachModel()">Scan & Attach</button>
+            </div>
+            <span id="attach_error" class="error-text"></span>
+
+            <div id="attached_models_list">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        // Phase 1: Connection
+        async function pingShiva() {
+            const indicator = document.getElementById('indicator');
+            try {
+                const response = await fetch('http://localhost:5123/health-and-capability-check');
+                const data = await response.json();
+                
+                if (data.cognitive_state.status === "online") {
+                    indicator.classList.add("online");
+                    // Unlock Phase 2 UI
+                    const attachLayer = document.getElementById('attachment-layer');
+                    attachLayer.style.opacity = "1";
+                    attachLayer.style.pointerEvents = "auto";
+                }
+            } catch (error) {
+                alert("Connection failed. Ensure FastAPI is running.");
+                indicator.classList.remove("online");
+            }
+        }
+
+        // Phase 2: Attachment
+        async function attachModel() {
+            const pathInput = document.getElementById('model_path').value;
+            const errorSpan = document.getElementById('attach_error');
+            const btn = document.getElementById('attach_btn');
+            
+            if (!pathInput) {
+                errorSpan.innerText = "Please enter a valid directory path.";
+                return;
+            }
+
+            errorSpan.innerText = "";
+            btn.innerText = "Scanning...";
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('http://localhost:5123/frankenMerging', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: pathInput })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || "Unknown error occurred");
+                }
+
+                if (data.success) {
+                    renderModelCard(data.model);
+                    document.getElementById('model_path').value = ""; // clear input
+                }
+            } catch (error) {
+                errorSpan.innerText = error.message;
+            } finally {
+                btn.innerText = "Scan & Attach";
+                btn.disabled = false;
+            }
+        }
+
+       function renderModelCard(model) {
+            const list = document.getElementById('attached_models_list');
+            
+            const numWeights = model.files.weights.length;
+            const meta = model.metadata;
+            const compat = model.compatibility;
+
+            // 1. Metadata Grid (Phase 3)
+            const metadataHtml = meta.architecture !== "unknown" ? `
+                <div style="background: #1e293b; padding: 10px; border-radius: 4px; margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 0.85rem; border: 1px solid #334155;">
+                    <div><span style="color: #94a3b8;">Architecture:</span> <br> <strong>${meta.architecture}</strong></div>
+                    <div><span style="color: #94a3b8;">Hidden Size:</span> <br> <strong>${meta.hidden_size}</strong></div>
+                    <div><span style="color: #94a3b8;">Attn Heads:</span> <br> <strong>${meta.heads}</strong></div>
+                </div>
+            ` : `<div style="color: #f59e0b; font-size: 0.85rem; margin-top: 10px;">⚠️ config.json missing. Metadata extraction failed.</div>`;
+
+            // 2. Compatibility & Operations UI (Phase 5)
+            let compatColor = compat.is_compatible ? "#3b82f6" : "#f43f5e";
+            if (compat.required_operations.length > 0) compatColor = "#f59e0b"; // Warning orange for SVD compression
+
+            let opsHtml = "";
+            if (compat.required_operations.length > 0) {
+                opsHtml = `<ul style="font-size: 0.8rem; color: #cbd5e1; padding-left: 20px; margin: 5px 0;">`;
+                compat.required_operations.forEach(op => {
+                    opsHtml += `<li><strong>${op.name}:</strong> ${op.detail}</li>`;
+                });
+                opsHtml += `</ul>`;
+            }
+
+            // 3. FrankenMerge Button & Status (Phase 6)
+            let mergeBtnHtml = '';
+            if (compat.is_compatible) {
+                mergeBtnHtml = `
+                    <button id="btn_${model.id}" onclick="triggerMerge('${model.id}')" 
+                            style="margin-top: 15px; background: #8b5cf6; width: 100%;">
+                        ⚡ Initiate FrankenMerge
+                    </button>
+                    <p id="status_${model.id}" style="font-size: 0.8rem; color: #34d399; margin-top: 5px; text-align: center; display: none;"></p>
+                `;
+            }
+
+            // 4. Assemble the final Card HTML
+            const cardHtml = `
+                <div class="model-card">
+                    <h4>${model.name} <span class="tag" style="float:right; background: #22c55e;">${numWeights} Weight File(s)</span></h4>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0;">${model.path}</p>
+                    
+                    ${metadataHtml}
+
+                    <div style="margin-top: 15px; border-top: 1px dashed #475569; padding-top: 10px;">
+                        <span style="font-size: 0.85rem; font-weight: bold; color: ${compatColor};">
+                            Analysis: ${compat.overall_status}
+                        </span>
+                        ${opsHtml}
+                    </div>
+
+                    <div style="margin-top: 10px;">
+                        <span class="tag" style="background: #8b5cf6;">Capability: Parasitic Host</span>
+                        ${compat.is_compatible ? `<span class="tag" style="background: #6366f1;">Capability: Weight Donor</span>` : ''}
+                    </div>
+
+                    ${mergeBtnHtml}
+                </div>
+            `;
+            
+            list.innerHTML += cardHtml;
+        }
+    </script>
+</body>
+</html>
