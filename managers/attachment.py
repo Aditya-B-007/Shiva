@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
-from managers.metadata import metadata_extractor 
+from managers.metadata import metadata_extractor
+from .capability import capability_registry      
+from .compatibility import compatibility_analyzer 
 
 class AttachmentManager:
     def __init__(self):
