@@ -3,179 +3,312 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shiva Artificial General Intelligence</title>
+    <title>Shiva AGI - Command Terminal</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }
-        .container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 2rem; border-radius: 8px; border: 1px solid #334155; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+        :root {
+            --bg-main: #0a0a0a;
+            --bg-sidebar: #121212;
+            --bg-input: #1a1a1a;
+            --text-main: #e5e5e5;
+            --text-muted: #737373;
+            --accent: #3b82f6; /* Blue for system */
+            --success: #22c55e; /* Green for execution */
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --font-mono: 'Courier New', Courier, monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg-main); color: var(--text-main); display: flex; height: 100vh; overflow: hidden; }
+
+        /* --- SIDEBAR --- */
+        #sidebar { width: 320px; background: var(--bg-sidebar); display: flex; flex-direction: column; padding: 1.5rem; border-right: 1px solid #262626; z-index: 10; }
+        .sidebar-header { margin-bottom: 2rem; border-bottom: 1px solid #262626; padding-bottom: 1rem; }
+        .sidebar-header h3 { font-family: var(--font-mono); font-size: 1.2rem; letter-spacing: 1px; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 8px; box-shadow: 0 0 5px var(--danger); }
+        .status-dot.online { background: var(--success); box-shadow: 0 0 5px var(--success); }
         
-        /* UI Elements */
-        input[type="text"] { width: 70%; padding: 10px; border-radius: 5px; border: 1px solid #475569; background: #020617; color: white; margin-right: 10px; }
-        button { background: #6366f1; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #4f46e5; }
-        button:disabled { background: #475569; cursor: not-allowed; }
+        .attach-box { display: flex; flex-direction: column; gap: 10px; margin-bottom: 1rem; opacity: 0.5; pointer-events: none; transition: opacity 0.3s; }
+        .attach-box input { background: var(--bg-main); border: 1px solid #333; color: white; padding: 10px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85rem; }
+        .btn { background: var(--bg-input); color: white; border: 1px solid #333; padding: 10px; border-radius: 4px; cursor: pointer; font-family: var(--font-mono); font-size: 0.9rem; transition: 0.2s; text-align: center; text-transform: uppercase; letter-spacing: 1px;}
+        .btn:hover { background: #262626; }
+        .btn-primary { background: var(--accent); border: none; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-primary:disabled { background: #333; cursor: not-allowed; color: #737373; }
+
+        #model-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .model-card { background: var(--bg-main); padding: 15px; border-radius: 4px; font-size: 0.85rem; border: 1px left solid #333; border-left: 3px solid var(--text-muted); }
+        .model-card.active { border-left-color: var(--success); }
+        .model-card h4 { margin-bottom: 6px; font-size: 0.95rem; font-family: var(--font-mono); }
+        .model-card .meta { color: var(--text-muted); font-size: 0.75rem; margin-bottom: 10px; word-break: break-all; }
+        .tag { background: #262626; padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; margin-right: 4px; font-family: var(--font-mono); }
+
+        /* --- MAIN TERMINAL AREA --- */
+        #main-view { flex: 1; display: flex; flex-direction: column; position: relative; }
         
-        /* Status & Layouts */
-        .status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: red; margin-right: 8px; }
-        .status.online { background: #22c55e; }
-        .section { margin-bottom: 2rem; background: #334155; padding: 1.5rem; border-radius: 8px; }
+        #top-bar { padding: 1rem 2rem; border-bottom: 1px solid #262626; display: flex; justify-content: space-between; align-items: center; background: #121212; }
+        .shiva-metrics { display: flex; gap: 1.5rem; font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-muted); }
+        .metric span { font-weight: bold; color: var(--text-main); }
+
+        /* Execution Log Styling */
+        #execution-log { flex: 1; overflow-y: auto; padding: 2rem; display: flex; flex-direction: column; gap: 8px; font-family: var(--font-mono); font-size: 0.9rem; line-height: 1.5; background: var(--bg-main); }
         
-        /* Model List */
-        .model-card { background: #0f172a; border-left: 4px solid #34d399; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
-        .model-card h4 { margin: 0 0 0.5rem 0; color: #f8fafc; }
-        .tag { background: #475569; font-size: 0.75rem; padding: 3px 6px; border-radius: 3px; margin-right: 5px; }
-        .error-text { color: #f43f5e; margin-top: 10px; display: block; font-size: 0.9rem; }
+        .log-entry { display: flex; gap: 15px; padding: 8px 0; border-bottom: 1px dashed #262626; word-break: break-word; }
+        .log-entry .timestamp { color: var(--text-muted); flex-shrink: 0; }
+        .log-entry .source { font-weight: bold; flex-shrink: 0; width: 80px; }
+        .log-entry .content { flex: 1; }
+        
+        .source-sys { color: var(--accent); }
+        .source-usr { color: var(--warning); }
+        .source-exe { color: var(--success); }
+        .source-err { color: var(--danger); }
+
+        /* Command Input Styling */
+        #input-container { padding: 1.5rem 2rem; background: var(--bg-sidebar); border-top: 1px solid #262626; }
+        .input-box { display: flex; align-items: center; background: var(--bg-main); border: 1px solid #333; border-radius: 4px; padding: 5px 15px; }
+        .prompt-symbol { color: var(--success); font-family: var(--font-mono); font-weight: bold; margin-right: 15px; font-size: 1.2rem; }
+        #directive-input { flex: 1; background: transparent; border: none; color: white; font-family: var(--font-mono); font-size: 1rem; padding: 10px 0; outline: none; }
+        
+        .empty-state { height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; color: var(--text-muted); font-family: var(--font-mono); text-align: center; }
+        .empty-state h1 { font-size: 1.5rem; color: var(--text-main); margin-bottom: 10px; letter-spacing: 2px; text-transform: uppercase; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h2><span id="indicator" class="status"></span>Shiva AGI Terminal</h2>
-            <button onclick="pingShiva()">Connect Engine</button>
-        </div>
-        
-        <div class="section" id="attachment-layer" style="opacity: 0.5; pointer-events: none;">
-            <h3>Attach External Model</h3>
-            <p style="font-size: 0.9rem; color: #94a3b8;">Paste the absolute OS path to a local model directory (e.g., C:/models/llama3 or /Users/name/models/mistral)</p>
-            
-            <div style="display: flex; margin-top: 1rem;">
-                <input type="text" id="model_path" placeholder="Absolute directory path...">
-                <button id="attach_btn" onclick="attachModel()">Scan & Attach</button>
-            </div>
-            <span id="attach_error" class="error-text"></span>
 
-            <div id="attached_models_list">
-                </div>
+    <nav id="sidebar">
+        <div class="sidebar-header">
+            <h3><span id="indicator" class="status-dot"></span>SHIVA_AGI</h3>
+            <button class="btn" style="width: 100%; margin-top: 15px;" onclick="pingShiva()">Initialize Daemon</button>
         </div>
-    </div>
+
+        <div class="attach-box" id="attachment-layer">
+            <input type="text" id="model_path" placeholder="/path/to/model/weights">
+            <button class="btn btn-primary" id="attach_btn" onclick="attachModel()">Mount Payload</button>
+            <span id="attach_error" style="color: var(--danger); font-size: 0.8rem; margin-top: 5px;"></span>
+        </div>
+
+        <h4 style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; border-bottom: 1px solid #262626; padding-bottom: 5px;">MOUNTED ARCHITECTURES</h4>
+        <div id="model-list"></div>
+    </nav>
+
+    <main id="main-view">
+        <div id="top-bar" style="display: none;">
+            <div id="active-model-name" style="font-family: var(--font-mono); font-size: 0.9rem; color: var(--success);">[NO ACTIVE POLICY]</div>
+            <div class="shiva-metrics">
+                <div class="metric">VALENCE_MOOD: <span id="ui-mood" style="color: var(--warning);">--</span></div>
+                <div class="metric">SYS_AROUSAL: <span id="ui-arousal" style="color: var(--danger);">--</span></div>
+                <div class="metric">MEM_BANK: <span id="ui-memory" style="color: var(--accent);">--</span></div>
+            </div>
+        </div>
+
+        <div id="execution-log">
+            <div class="empty-state" id="empty-state">
+                <h1>Shiva execution engine</h1>
+                <p>Awaiting local engine initialization and architecture mount.</p>
+            </div>
+        </div>
+
+        <div id="input-container" style="display: none;">
+            <div class="input-box">
+                <span class="prompt-symbol">root@shiva:~#</span>
+                <input type="text" id="directive-input" placeholder="Enter execution directive..." onkeydown="handleEnter(event)" autocomplete="off">
+            </div>
+        </div>
+    </main>
 
     <script>
-        // Phase 1: Connection
+        const API_BASE = "http://localhost:5123";
+        let activeModelId = null;
+
+        function getTimestamp() {
+            const now = new Date();
+            return now.toISOString().split('T')[1].slice(0, 12);
+        }
+
+        // --- CORE LOGIC ---
         async function pingShiva() {
             const indicator = document.getElementById('indicator');
             try {
-                const response = await fetch('http://localhost:5123/health-and-capability-check');
+                const response = await fetch(`${API_BASE}/health-and-capability-check`);
                 const data = await response.json();
                 
                 if (data.cognitive_state.status === "online") {
                     indicator.classList.add("online");
-                    // Unlock Phase 2 UI
-                    const attachLayer = document.getElementById('attachment-layer');
-                    attachLayer.style.opacity = "1";
-                    attachLayer.style.pointerEvents = "auto";
+                    document.getElementById('attachment-layer').style.opacity = "1";
+                    document.getElementById('attachment-layer').style.pointerEvents = "auto";
+                    updateShivaMetrics(data.cognitive_state);
+                    appendLog("SYS", "Daemon initialized. Awaiting payload mount.", "source-sys");
                 }
             } catch (error) {
-                alert("Connection failed. Ensure FastAPI is running.");
+                alert("Connection failed. Ensure FastAPI is running on port 5123.");
                 indicator.classList.remove("online");
             }
         }
 
-        // Phase 2: Attachment
         async function attachModel() {
             const pathInput = document.getElementById('model_path').value;
             const errorSpan = document.getElementById('attach_error');
             const btn = document.getElementById('attach_btn');
             
-            if (!pathInput) {
-                errorSpan.innerText = "Please enter a valid directory path.";
-                return;
-            }
-
-            errorSpan.innerText = "";
-            btn.innerText = "Scanning...";
-            btn.disabled = true;
+            if (!pathInput) { errorSpan.innerText = "Path required."; return; }
+            errorSpan.innerText = ""; btn.innerText = "SCANNING..."; btn.disabled = true;
 
             try {
-                const response = await fetch('http://localhost:5123/frankenMerging', {
+                const response = await fetch(`${API_BASE}/frankenMerging`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ path: pathInput })
                 });
-
                 const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.detail || "Unknown error occurred");
-                }
-
+                if (!response.ok) throw new Error(data.detail || "Unknown error");
                 if (data.success) {
                     renderModelCard(data.model);
-                    document.getElementById('model_path').value = ""; // clear input
+                    document.getElementById('model_path').value = "";
+                    appendLog("SYS", `Successfully mapped architecture: ${data.model.name}`, "source-sys");
                 }
             } catch (error) {
                 errorSpan.innerText = error.message;
+                appendLog("ERR", `Mount failed: ${error.message}`, "source-err");
             } finally {
-                btn.innerText = "Scan & Attach";
-                btn.disabled = false;
+                btn.innerText = "Mount Payload"; btn.disabled = false;
             }
         }
 
-       function renderModelCard(model) {
-            const list = document.getElementById('attached_models_list');
-            
-            const numWeights = model.files.weights.length;
-            const meta = model.metadata;
-            const compat = model.compatibility;
+        async function triggerMerge(modelId, modelName) {
+            const btn = document.getElementById(`btn_${modelId}`);
+            btn.innerText = "EXECUTING SVD...";
+            btn.disabled = true;
+            appendLog("SYS", `Initiating FrankenMerge for ${modelName}. Running Truncated SVD...`, "source-sys");
 
-            // 1. Metadata Grid (Phase 3)
-            const metadataHtml = meta.architecture !== "unknown" ? `
-                <div style="background: #1e293b; padding: 10px; border-radius: 4px; margin-top: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 0.85rem; border: 1px solid #334155;">
-                    <div><span style="color: #94a3b8;">Architecture:</span> <br> <strong>${meta.architecture}</strong></div>
-                    <div><span style="color: #94a3b8;">Hidden Size:</span> <br> <strong>${meta.hidden_size}</strong></div>
-                    <div><span style="color: #94a3b8;">Attn Heads:</span> <br> <strong>${meta.heads}</strong></div>
-                </div>
-            ` : `<div style="color: #f59e0b; font-size: 0.85rem; margin-top: 10px;">⚠️ config.json missing. Metadata extraction failed.</div>`;
+            try {
+                const response = await fetch(`${API_BASE}/${modelId}ModelMerge`);
+                const data = await response.json();
 
-            // 2. Compatibility & Operations UI (Phase 5)
-            let compatColor = compat.is_compatible ? "#3b82f6" : "#f43f5e";
-            if (compat.required_operations.length > 0) compatColor = "#f59e0b"; // Warning orange for SVD compression
+                if (!response.ok) throw new Error(data.detail);
 
-            let opsHtml = "";
-            if (compat.required_operations.length > 0) {
-                opsHtml = `<ul style="font-size: 0.8rem; color: #cbd5e1; padding-left: 20px; margin: 5px 0;">`;
-                compat.required_operations.forEach(op => {
-                    opsHtml += `<li><strong>${op.name}:</strong> ${op.detail}</li>`;
-                });
-                opsHtml += `</ul>`;
-            }
-
-            // 3. FrankenMerge Button & Status (Phase 6)
-            let mergeBtnHtml = '';
-            if (compat.is_compatible) {
-                mergeBtnHtml = `
-                    <button id="btn_${model.id}" onclick="triggerMerge('${model.id}')" 
-                            style="margin-top: 15px; background: #8b5cf6; width: 100%;">
-                        ⚡ Initiate FrankenMerge
-                    </button>
-                    <p id="status_${model.id}" style="font-size: 0.8rem; color: #34d399; margin-top: 5px; text-align: center; display: none;"></p>
-                `;
-            }
-
-            // 4. Assemble the final Card HTML
-            const cardHtml = `
-                <div class="model-card">
-                    <h4>${model.name} <span class="tag" style="float:right; background: #22c55e;">${numWeights} Weight File(s)</span></h4>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0;">${model.path}</p>
+                if (data.success) {
+                    updateShivaMetrics(data.cognitive_state);
                     
-                    ${metadataHtml}
+                    btn.innerText = "POLICY ACTIVE";
+                    btn.style.background = "var(--success)";
+                    btn.style.color = "#000";
+                    document.getElementById(`card_${modelId}`).classList.add('active');
+                    
+                    activateTerminal(modelId, modelName);
+                    appendLog("EXE", `SVD Merge Complete. Policy active and bound to terminal.`, "source-exe");
+                }
+            } catch (error) {
+                btn.innerText = "MERGE FAULT";
+                btn.style.background = "var(--danger)";
+                appendLog("ERR", `SVD Merge Failed: ${error.message}`, "source-err");
+            }
+        }
 
-                    <div style="margin-top: 15px; border-top: 1px dashed #475569; padding-top: 10px;">
-                        <span style="font-size: 0.85rem; font-weight: bold; color: ${compatColor};">
-                            Analysis: ${compat.overall_status}
-                        </span>
-                        ${opsHtml}
+        // --- UI UPDATES ---
+        function renderModelCard(model) {
+            const list = document.getElementById('model-list');
+            const meta = model.metadata;
+            const isCompat = model.compatibility.is_compatible;
+            
+            const cardHtml = `
+                <div class="model-card" id="card_${model.id}">
+                    <h4>${model.name}</h4>
+                    <div class="meta">${model.path}</div>
+                    <div style="margin-bottom: 12px;">
+                        <span class="tag">${meta.architecture}</span>
+                        <span class="tag">${meta.parameters || meta.hidden_size + 'd'}</span>
                     </div>
-
-                    <div style="margin-top: 10px;">
-                        <span class="tag" style="background: #8b5cf6;">Capability: Parasitic Host</span>
-                        ${compat.is_compatible ? `<span class="tag" style="background: #6366f1;">Capability: Weight Donor</span>` : ''}
-                    </div>
-
-                    ${mergeBtnHtml}
+                    ${isCompat ? 
+                        `<button id="btn_${model.id}" class="btn" style="width: 100%; border-color: #5b21b6; color: #a78bfa;" onclick="triggerMerge('${model.id}', '${model.name}')">Ingest Weights</button>` : 
+                        `<div style="color: var(--danger); font-size: 0.75rem; font-family: var(--font-mono);">[INCOMPATIBLE ARCHITECTURE]</div>`
+                    }
                 </div>
             `;
-            
             list.innerHTML += cardHtml;
+        }
+
+        function updateShivaMetrics(state) {
+            document.getElementById('ui-mood').innerText = state.emotional_state.current_mood.toUpperCase();
+            document.getElementById('ui-arousal').innerText = state.emotional_state.drives.arousal.toFixed(3);
+            document.getElementById('ui-memory').innerText = state.memory_bank_size;
+        }
+
+        function activateTerminal(modelId, modelName) {
+            activeModelId = modelId;
+            document.getElementById('top-bar').style.display = "flex";
+            document.getElementById('input-container').style.display = "block";
+            document.getElementById('empty-state').style.display = "none";
+            document.getElementById('active-model-name').innerText = `[ACTIVE_POLICY: ${modelName.toUpperCase()}]`;
+            document.getElementById('directive-input').focus();
+        }
+
+        // --- EXECUTION LOGIC ---
+        function handleEnter(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                dispatchDirective();
+            }
+        }
+
+        async function dispatchDirective() {
+            const inputEl = document.getElementById('directive-input');
+            const text = inputEl.value.trim();
+            if (!text || !activeModelId) return;
+
+            // 1. Log the User Directive
+            appendLog("USR", text, "source-usr");
+            inputEl.value = "";
+            inputEl.disabled = true;
+            
+            // 2. Log Acknowledgment
+            const processId = `proc_${Date.now()}`;
+            appendLog("SYS", `[PID ${processId}] Directive accepted. Executing in background...`, "source-sys");
+
+            // 3. Backend Execution Call (Updated Endpoint)
+            try {
+                const response = await fetch(`${API_BASE}/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_id: activeModelId, directive: text })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail);
+                
+                // 4. Log the silent execution result
+                appendLog("EXE", `[PID ${processId}] Execution Complete. Output logged to universal latent space.`, "source-exe");
+                
+                if (data.execution_summary) {
+                    appendLog("SYS", `Summary: ${data.execution_summary}`, "source-sys");
+                }
+
+                updateShivaMetrics(data.cognitive_state);
+
+            } catch (error) {
+                appendLog("ERR", `[PID ${processId}] FATAL: ${error.message}`, "source-err");
+            } finally {
+                inputEl.disabled = false;
+                inputEl.focus();
+            }
+        }
+
+        function appendLog(source, content, sourceClass) {
+            const logArea = document.getElementById('execution-log');
+            
+            // Remove empty state if it exists
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.style.display = 'none';
+
+            const logHtml = `
+                <div class="log-entry">
+                    <span class="timestamp">[${getTimestamp()}]</span>
+                    <span class="source ${sourceClass}">${source}</span>
+                    <span class="content">${content}</span>
+                </div>
+            `;
+            logArea.insertAdjacentHTML('beforeend', logHtml);
+            logArea.scrollTop = logArea.scrollHeight;
         }
     </script>
 </body>

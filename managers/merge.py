@@ -4,7 +4,6 @@ from safetensors.torch import load_file
 from core.merge_strategies import RapidFrankenmergeStrategy
 from .runtime import runtime_manager
 from .attachment import attachment_manager
-from .merge import merge_manager
 
 
 class FrankenMergeManager:

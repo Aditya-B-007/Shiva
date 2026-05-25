@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from managers.metadata import metadata_extractor
+from .metadata import metadata_extractor
 from .capability import capability_registry      
 from .compatibility import compatibility_analyzer 
 

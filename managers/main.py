@@ -4,6 +4,9 @@ from pydantic import BaseModel
 from .capability import capability_registry
 from .runtime import runtime_manager
 from .attachment import attachment_manager
+from .merge import merge_manager
+from .execution import execution_manager, ExecutionDirective
+import uvicorn
 
 app = FastAPI(title="Shiva AGI Local Gateway", version="1.0.0")
 
@@ -46,6 +49,12 @@ async def trigger_frankenmerge(model_id: str):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
 
+@app.post("/execute")
+async def execute_directive(request: ExecutionDirective):
+    try:
+        return execution_manager.process_directive(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5123)
