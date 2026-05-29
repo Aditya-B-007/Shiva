@@ -27,7 +27,7 @@ class EpisodicMemory(IEpisodicMemory):
     def __init__(
         self,
         latent_dim: int = 512,
-        capacity: int = 10_000,
+        capacity: int = 10000,
         sequence_length: int = 16,
     ) -> None:
         super().__init__()
