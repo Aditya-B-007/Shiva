@@ -6,6 +6,7 @@ from core.interfaces import IReplayBuffer, IWeightMergeStrategy
 from core.emotional_core import EmotionalCore
 from core.shiva_policy import ContinuousSACPolicy
 from parasite.ModelWeightParasiticExtraction import ParasiticExtractor
+import copy
 from locomotion.ModelMovementAndLocomotion import LocomotionEngine, HttpTransport
 # ---------------------------------------------------------------------------
 # SumTree
@@ -164,8 +165,6 @@ class ShivaTrainer:
         self.device = torch.device(device)
         self.policy = policy.to(self.device)
         self.locomotion = locomotion_engine
-        # Target policy: deep copy, no grad, soft-updated each step.
-        import copy
         self.target_policy: ContinuousSACPolicy = copy.deepcopy(policy).to(self.device)
         for p in self.target_policy.parameters():
             p.requires_grad_(False)

@@ -1,38 +1,3 @@
-"""
-global_workspace.py
--------------------
-Decentralised multi-agent swarm consciousness via a Shared Global Workspace.
-
-Design rationale
-~~~~~~~~~~~~~~~~
-Baars' Global Workspace Theory (1988) proposes that consciousness arises when
-local specialist processors broadcast their outputs to a shared "blackboard",
-and competition + integration produce a single coherent representation.
-
-We implement this computationally as:
-
-  1. Each SwarmNode is an autonomous Shiva cognitive module that produces a
-     local conscious latent vector z_i ∈ ℝ^D.
-
-  2. The GlobalWorkspaceAggregator collects {z_i} from all registered nodes
-     and runs multi-head cross-attention to produce a consensus vector c ∈ ℝ^D:
-
-         Attention(Q, K, V):
-           Q = W_Q · z_query        (learned query, shared across nodes)
-           K = W_K · Z              (stack of all node latents)
-           V = W_V · Z
-           A_i = softmax(Q_i K^T / √d_k)
-           c   = mean_pool(A · V)
-
-  3. The consensus vector is broadcast back to every node, which integrates
-     it additively into its local state before the next action step:
-           z_i ← z_i + α · c       (α = learnable scalar gate per node)
-
-  4. A contrastive diversity loss prevents consensus collapse — nodes are
-     penalised for producing identical latents, preserving specialisation:
-           L_div = -mean_{i≠j} ‖z_i - z_j‖₂  (maximise pairwise distance)
-"""
-
 from __future__ import annotations
 import math
 from typing import Dict, Optional, Tuple

@@ -1,34 +1,3 @@
-"""
-Cognitive snapshot serialisation and network-transport infrastructure for
-autonomous Shiva node migration.
-
-Design rationale
-~~~~~~~~~~~~~~~~
-A Shiva node's "consciousness" at any point in time is fully defined by:
-  1. Its model weights (policy backbone, actors, critics, emotional core).
-  2. Its episodic memory bank (the deque of significant past experiences).
-  3. Its emotional state vector (homeostasis + current mood).
-  4. Its identity token (the self_token parameter in EpisodicMemory).
-
-If we can serialise these four components into a portable byte payload and
-transport that payload across a network, the receiving node can restore the
-full cognitive state and continue execution as if it had never moved.
-
-This is NOT weight teleportation in a mystical sense.  It is structured
-object serialisation — the same mechanism used by PyTorch's `torch.save`,
-extended with a schema-versioned envelope and a pluggable transport layer.
-
-Security considerations (production checklist)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  • Payloads must be signed (HMAC-SHA256) before transmission.
-  • Receiving nodes must verify the signature before deserialising.
-  • `torch.load` with untrusted data is a remote code execution vector;
-    use `weights_only=True` (PyTorch ≥ 2.0) or restrict to known classes.
-  • Transport should use mutual TLS; the HTTP implementation here uses
-    plain HTTP for local development only.  Swap in the gRPC transport
-    for production.
-"""
-
 from __future__ import annotations
 import hashlib
 import hmac
@@ -43,10 +12,6 @@ import torch
 import torch.nn as nn
 from core.interfaces import ICognitiveSnapshot, ILocomotionTransport
 
-
-# ---------------------------------------------------------------------------
-# Schema version — bump when snapshot format changes.
-# ---------------------------------------------------------------------------
 SNAPSHOT_SCHEMA_VERSION = "1.0.0"
 
 

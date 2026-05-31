@@ -6,6 +6,30 @@ from core.latent_alignment import LatentAligner
 from core.emotional_core import EmotionalCore
 from core.transformer_architecture import TransformerEncoderBlock
 
+class LocalVocabularyEmbedding(nn.Module):
+    def __init__(self, vocab_size: int = 256, d_model: int = 512):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        
+    def forward(self, text: str, device: torch.device) -> torch.Tensor:
+        # Encode as raw bytes to protect against out-of-vocab token failures
+        tokens = list(text.encode('utf-8', errors='ignore'))
+        if not tokens:
+            tokens = [0]
+        tensor_tokens = torch.tensor([tokens], dtype=torch.long, device=device) # Shape: (1, T)
+        return self.embedding(tensor_tokens) # Shape: (1, T, d_model)
+
+class ShivaBackboneWrapper(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.num_heads = 8
+        self.block = TransformerEncoderBlock(d_model=dim, num_heads=8)
+        self.tokenizer_layer = LocalVocabularyEmbedding(vocab_size=256, d_model=dim)
+        
+    def forward_pass(self, text_directive: str, device: torch.device):
+        embedded_input = self.tokenizer_layer(text_directive, device)
+        return self.block(embedded_input)
+
 class ShivaRuntimeManager:
     def __init__(self, d_model: int = 512, action_dim: int = 64):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -15,15 +39,6 @@ class ShivaRuntimeManager:
         self.emotional_core = EmotionalCore(latent_aligner=self.aligner, hidden_dim=d_model).to(self.device)
         self.memory = EpisodicMemory(latent_dim=d_model).to(self.device)
 
-        
-        class ShivaBackboneWrapper(nn.Module):
-            def __init__(self, dim):
-                super().__init__()
-                self.num_heads=8
-                self.block = TransformerEncoderBlock(d_model=dim, num_heads=8)
-            def forward_pass(self, x):
-                return self.block(x)
-                
         self.backbone = ShivaBackboneWrapper(d_model).to(self.device)
         self.actor1 = ContinuousActor(d_model, action_dim).to(self.device)
         self.actor2 = ContinuousActor(d_model, action_dim).to(self.device)
@@ -40,7 +55,6 @@ class ShivaRuntimeManager:
     def get_cognitive_state(self) -> dict:
         mood_name, _ = self.emotional_core.current_mood()
         homeostasis = self.emotional_core._homeostasis.vector.tolist()
-        
         return {
             "status": "online",
             "device": str(self.device),

@@ -128,7 +128,7 @@ class TransformerEncoderBlock(nn.Module):
         return self.attn_gate_net(x), self.ff_gate_net(x)
 
 
-    def forward(
+    def forward_pass(
         self, x: torch.Tensor, valence: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
@@ -167,8 +167,3 @@ class TransformerEncoderBlock(nn.Module):
         x = self.norm2(x + gate_ff * ff_out)
 
         return x
-#I will slowly try to remove the below method as it feels redundant.
-    def forward_pass(
-        self, x: torch.Tensor, valence: torch.Tensor | None = None
-    ) -> torch.Tensor:
-        return self.forward(x, valence)
