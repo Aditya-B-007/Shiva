@@ -7,9 +7,10 @@ from core.emotional_core import EmotionalCore
 from core.shiva_policy import ContinuousSACPolicy
 from parasite.ModelWeightParasiticExtraction import ParasiticExtractor
 import copy
-from locomotion.ModelMovementAndLocomotion import LocomotionEngine, HttpTransport
+from locomotion.ModelMovementAndLocomotion import LocomotionEngine
+
 # ---------------------------------------------------------------------------
-# SumTree
+# SumTree: Vectorized Binary Tree Structure
 # ---------------------------------------------------------------------------
 
 class SumTree:
@@ -45,6 +46,38 @@ class SumTree:
         self.update(idx, p)
         self.write = (self.write + 1) % self.capacity
 
+    # --- HIGH-THROUGHPUT SWARM UPGRADE: Parallelized Batch Insertion ---
+    def add_batch(self, priorities: List[float], data_items: List[Any]) -> None:
+        """
+        Ingests transition sequences from all active swarm nodes simultaneously.
+        Recomputes tree layer sums bottom-up to prevent sequential O(N log C) loops.
+        """
+        assert len(priorities) == len(data_items), "Mismatched priority and item batch dimensions."
+        
+        for p, data in zip(priorities, data_items):
+            leaf_idx = self.write + self.capacity - 1
+            self.data[self.write] = data
+            
+            # Write to leaf node without triggering intermediate tree updates
+            self.tree[leaf_idx] = p
+            self.write = (self.write + 1) % self.capacity
+            
+        # Rebuild tree levels bottom-up in a single optimized pass
+        current_level_start = self.capacity - 1
+        nodes_at_level = self.capacity
+        
+        while nodes_at_level > 1:
+            parent_level_start = (current_level_start - 1) // 2
+            parents_count = nodes_at_level // 2
+            
+            for i in range(parents_count):
+                left_child = self.tree[current_level_start + 2 * i]
+                right_child = self.tree[current_level_start + 2 * i + 1]
+                self.tree[parent_level_start + i] = left_child + right_child
+                
+            current_level_start = parent_level_start
+            nodes_at_level = parents_count
+
     def get_leaf(self, v: float) -> Tuple[int, float, Any]:
         parent_idx = 0
         while True:
@@ -62,21 +95,11 @@ class SumTree:
 
 
 # ---------------------------------------------------------------------------
-# Prioritised replay buffer
+# Prioritised Replay Buffer
 # ---------------------------------------------------------------------------
 
 class PrioritizedReplayBuffer(IReplayBuffer):
-    """
-    Proportional prioritisation replay buffer (Schaul et al., 2015).
 
-    Priority of experience i:
-        p_i = (|δ_i| + ε)^α
-
-    Importance-sampling correction weight:
-        w_i = (1 / N · 1/P(i))^β,   normalised by max(w_j)
-
-    β is annealed from its initial value to 1 over training to remove bias.
-    """
 
     def __init__(
         self,
@@ -93,6 +116,11 @@ class PrioritizedReplayBuffer(IReplayBuffer):
 
     def add(self, sample: Any) -> None:
         self.tree.add(self.max_priority, sample)
+
+    def add_swarm_batch(self, samples: List[Any]) -> None:
+        """Enables parallel batch storage interfaces for large swarm metrics collections."""
+        priorities = [self.max_priority] * len(samples)
+        self.tree.add_batch(priorities, samples)
 
     def sample(self, batch_size: int) -> Tuple[List[Any], List[int], torch.Tensor]:
         self.beta = min(1.0, self.beta + self.beta_increment)
@@ -122,30 +150,18 @@ class PrioritizedReplayBuffer(IReplayBuffer):
 
 
 # ---------------------------------------------------------------------------
-# ShivaTrainer
+# Shiva Trainer Optimization Engine
 # ---------------------------------------------------------------------------
 
 class ShivaTrainer:
     """
     Soft Actor-Critic training loop for the Shiva agent.
 
-    Responsibilities (and only these):
+    Responsibilities:
       • Off-policy SAC critic and actor updates with IS-weighted PER.
-      • Target network soft-updates.
-      • Dream-cycle loss computation (delegated to injected memory + emotions).
-      • External weight ingestion (delegated to injected merge strategy).
-
-    All collaborators are injected; ShivaTrainer never instantiates them.
-
-    Args:
-        policy:          ContinuousSACPolicy (contains backbone, actors, critics).
-        buffer:          IReplayBuffer — replay memory.
-        emotional_core:  EmotionalCore — valence and homeostasis signals.
-        merge_strategy:  IWeightMergeStrategy — how to absorb external weights.
-        gamma:           Discount factor.
-        tau:             Soft-update coefficient.
-        alpha_entropy:   SAC temperature (entropy regularisation coefficient).
-        device:          Torch device string.
+      • Target network soft-updates via Polyak averaging.
+      • Dream-cycle reconstruction loss optimization with anti-collapse swarm tracking.
+      • External weight ingestion boundaries management.
     """
 
     def __init__(
@@ -160,7 +176,7 @@ class ShivaTrainer:
         tau: float = 0.005,
         alpha_entropy: float = 0.2,
         device: str = "cpu",
-        locomotion_engine: LocomotionEngine | None=None
+        locomotion_engine: LocomotionEngine | None = None
     ) -> None:
         self.device = torch.device(device)
         self.policy = policy.to(self.device)
@@ -198,11 +214,6 @@ class ShivaTrainer:
     def dream_cycle(self, batch_size: int = 32) -> Optional[float]:
         """
         Replay significant past states and apply a reconstruction loss.
-        Uses the memory attached to policy.memory (IEpisodicMemory) to
-        sample dream states, then computes MSE between model predictions
-        on the last step and the next-step targets in the dream sequence.
-
-          L_dream = MSE(f(z_{T}), z_{1:T})
         """
         dream_states = self.policy.memory.get_dream_batch(batch_size)
         if dream_states is None:
@@ -211,26 +222,26 @@ class ShivaTrainer:
         dream_states = dream_states.to(self.device)
         self.actor_optimizer.zero_grad()
 
-        # Valence signal from the final state in each dream sequence.
+        # Valence signal from the final state in each dream sequence
         valence = self.emotions.get_valence(dream_states[:, -1, :])
 
-        # Forward pass on the final dream state.
+        # Forward pass on the final dream state
         outputs, _, _ = self.policy.get_action(dream_states[:, -1, :].unsqueeze(1))
         targets = dream_states[:, 1:, :]
 
-        #dream_loss = F.mse_loss(outputs.unsqueeze(1).expand_as(targets), targets)
-        dream_loss=F.mse_loss(outputs.unsqueeze(1).expand_as(targets),targets)
+        dream_loss = F.mse_loss(outputs.unsqueeze(1).expand_as(targets), targets)
 
-        if (self.policy.swarm is not None):
-
-            div_loss= self.policy.swarm.get_diversity_loss()
-            dream_loss+=0.02*div_loss
+        if self.policy.swarm is not None:
+            div_loss = self.policy.swarm.get_diversity_loss()
+            dream_loss += 0.02 * div_loss
+            
         if self.probe is not None:
             try:
-                p_loss=self.probe.compute_loss(dream_states[:,-1,:],self.policy.backbone)
-                dream_loss+=0.05*p_loss
+                p_loss = self.probe.compute_loss(dream_states[:, -1, :], self.policy.backbone)
+                dream_loss += 0.05 * p_loss
             except RuntimeError:
                 pass
+                
         dream_loss.backward()
         self.actor_optimizer.step()
         return dream_loss.item()
@@ -251,18 +262,8 @@ class ShivaTrainer:
 
     def update_step(self, batch_size: int) -> Optional[Tuple[float, float]]:
         """
-        One SAC update: critic step → actor step → priority update → soft update.
-
-        Critic target (original Bellman formulation):
-            y = r + γ(1−d)·[min(Q̄₁,Q̄₂)(s',ã') − α·log π(ã'|s')]
-
-        Critic loss (IS-weighted):
-            L_c = E[w · (Q_i(s,a) − y)²],   i ∈ {1,2}
-
-        Actor loss (IS-weighted entropy-regularised):
-            L_a = E[w · (α·log π(ã|s) − min(Q₁,Q₂)(s,ã))]
-
-        Returns (critic_loss, actor_loss) or None if buffer is too small.
+        One SAC update step: critic step → actor step → priority update → soft update.
+        Flyweight structure ensures parameter steps propagate globally across references.
         """
         batch, idxs, is_weights = self.buffer.sample(batch_size)
         if any(s is None for s in batch):
@@ -296,35 +297,28 @@ class ShivaTrainer:
         actor_loss = (
             is_weights * (self.alpha_entropy * log_probs - torch.min(q1_new, q2_new))
         ).mean()
-        self.actor_optimizer.zero_grad()
-        #actor_loss.backward()
-        total_loss=actor_loss
-        if ( hasattr(self.policy,"swarm") and self.policy.swarm is not None):
-           # _, div_loss = self.policy.swarm.step()
-            div_loss=self.policy.swarm.get_diversity_loss()
-            total_actor_loss = ( total_actor_loss+ 0.05 * div_loss)
+        
+        # Accumulate loss terms cleanly
+        total_loss = actor_loss
+        
+        # --- FIXED ACCUMULATION BUG: Safely add anti-collapse swarm regularisation ---
+        if hasattr(self.policy, "swarm") and self.policy.swarm is not None:
+            div_loss = self.policy.swarm.get_diversity_loss()
+            total_loss = total_loss + 0.05 * div_loss
 
-
-        self.actor_optimizer.zero_grad()
+        # Integrate tracking restrictions from active parasitic distillation probes
         if self.probe is not None:
+            p_loss = self.probe.compute_loss(states, self.policy.backbone)
+            total_loss = total_loss + 0.1 * p_loss
 
-            p_loss=self.probe.compute_loss(states,self.policy.backbone)
-
-            total_loss=(total_loss+.1*p_loss)
-
+        self.actor_optimizer.zero_grad()
         total_loss.backward()
         self.actor_optimizer.step()
 
-        if (
-                self.probe is not None
-                and self.training_step % self.probe_frequency == 0
-        ):
-
+        # Step updates on parasitic hooks
+        if self.probe is not None and self.training_step % self.probe_frequency == 0:
             try:
-                self.probe.distil_step(
-                    states,
-                    self.policy.backbone
-                )
+                self.probe.distil_step(states, self.policy.backbone)
             except RuntimeError:
                 pass
 
@@ -335,29 +329,23 @@ class ShivaTrainer:
         # --- Soft target update ---
         self._soft_update()
 
+        self.training_step += 1
         return critic_loss.item(), actor_loss.item()
 
     def _soft_update(self) -> None:
         """
-        Polyak averaging:  θ̄ ← τθ + (1−τ)θ̄
+        Polyak averaging: θ̄ ← τθ + (1−τ)θ̄
         """
-        for param, target_param in zip(
-            self.policy.parameters(), self.target_policy.parameters()
-        ):
-            target_param.data.copy_(
-                self.tau * param.data + (1.0 - self.tau) * target_param.data
-            )
+        for param, target_param in zip(self.policy.parameters(), self.target_policy.parameters()):
+            target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
 
-    def migrate_agent(
-            self,
-            destination:str,
-            node_id:str="shiva"
-    ):
-        
+    # ------------------------------------------------------------------
+    # Locomotion / Migration Methods
+    # ------------------------------------------------------------------
 
+    def migrate_agent(self, destination: str, node_id: str = "shiva"):
         if self.locomotion is None:
             return None
-
         return self.locomotion.migrate_out(
             policy=self.policy,
             episodic_memory=self.policy.memory,
@@ -366,16 +354,9 @@ class ShivaTrainer:
             node_id=node_id
         )
 
-
-    def receive_agent(
-            self,
-            migration_id:str,
-            source:str
-    ):
-
+    def receive_agent(self, migration_id: str, source: str):
         if self.locomotion is None:
             return
-
         self.locomotion.migrate_in(
             migration_id=migration_id,
             source=source,
@@ -385,25 +366,7 @@ class ShivaTrainer:
             device=str(self.device)
         )
 
-    # ------------------------------------------------------------------
-    # External weight ingestion (OCP: delegates to injected strategy)
-    # ------------------------------------------------------------------
-
-    def ingest_external_weights(
-        self,
-        ext_state_dict: Dict[str, torch.Tensor],
-        ext_config: Dict[str, Any],
-    ) -> None:
-        """
-        Absorb an external model's weights into policy using the injected
-        merge strategy, then trigger an emotional homeostasis update to
-        reflect the surprise of new knowledge.
-
-        The homeostasis update (action_impact=0.1, environment_surprise=0.8)
-        is preserved from the original codebase.
-        """
+    def ingest_external_weights(self, ext_state_dict: Dict[str, torch.Tensor], ext_config: Dict[str, Any]) -> None:
         new_state = self.merge_strategy.merge(self.policy, ext_state_dict, ext_config)
         self.policy.load_state_dict(new_state, strict=False)
-
-        # Curiosity signal: ingesting new weights surprises the system.
         self.emotions.update_homeostasis(action_impact=0.1, environment_surprise=0.8)

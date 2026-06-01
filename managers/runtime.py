@@ -5,6 +5,7 @@ from core.episodic_memory import EpisodicMemory
 from core.latent_alignment import LatentAligner
 from core.emotional_core import EmotionalCore
 from core.transformer_architecture import TransformerEncoderBlock
+from swarm.SwarmAlgorithmWorkspace import SwarmCoordinator  # Imported clean workspace orchestrator
 
 class LocalVocabularyEmbedding(nn.Module):
     def __init__(self, vocab_size: int = 256, d_model: int = 512):
@@ -43,6 +44,7 @@ class ShivaRuntimeManager:
         self.actor1 = ContinuousActor(d_model, action_dim).to(self.device)
         self.actor2 = ContinuousActor(d_model, action_dim).to(self.device)
         self.critic = DoubleQCritic(d_model, action_dim).to(self.device)
+        
         self.policy = ContinuousSACPolicy(
             backbone=self.backbone,
             actor1=self.actor1,
@@ -51,6 +53,17 @@ class ShivaRuntimeManager:
             critic=self.critic,
             d_model=d_model
         ).to(self.device)
+
+        self.swarm = SwarmCoordinator(
+            latent_dim=d_model,
+            n_nodes=100,  # Clear default sizing
+            action_dim=action_dim,
+            archetype_policy=self.policy,
+            archetype_emotional_core=self.emotional_core
+        ).to(self.device)
+        
+        # Link the swarm coordinator to the root policy context
+        self.policy.swarm = self.swarm
 
     def get_cognitive_state(self) -> dict:
         mood_name, _ = self.emotional_core.current_mood()
@@ -69,7 +82,12 @@ class ShivaRuntimeManager:
                     "engagement": round(homeostasis[3], 3)
                 }
             },
-            "memory_bank_size": len(self.memory._bank)
+            "memory_bank_size": len(self.memory._bank),
+            # Integrated telemetry validation to watch global structural trends
+            "swarm_telemetry": {
+                "total_allocated_nodes": self.swarm.n_nodes,
+                "current_diversity_loss": round(self.swarm.get_diversity_loss().item(), 4)
+            }
         }
 
 runtime_manager = ShivaRuntimeManager()

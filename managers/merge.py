@@ -5,7 +5,6 @@ from core.merge_strategies import RapidFrankenmergeStrategy
 from .runtime import runtime_manager
 from .attachment import attachment_manager
 
-
 class FrankenMergeManager:
     def __init__(self):
         self.strategy = RapidFrankenmergeStrategy()
@@ -34,18 +33,21 @@ class FrankenMergeManager:
         }
 
         try:
+
             new_state = self.strategy.merge(
                 target_model=runtime_manager.policy, 
                 ext_state_dict=ext_state_dict, 
                 ext_config=ext_config
             )
+            
             runtime_manager.policy.load_state_dict(new_state, strict=False)
+            
             runtime_manager.emotional_core.update_homeostasis(action_impact=0.3, environment_surprise=0.8)
-            runtime_manager.emotional_core.mood_swing("Alert", "Ingested massive external parameter distribution.")
+            runtime_manager.emotional_core.mood_swing("Alert", "Ingested massive external parameter distribution across reference architecture layers.")
             
             return {
                 "success": True, 
-                "message": "FrankenMerge successful. Weights compressed and ingested via SVD.",
+                "message": "FrankenMerge successful. Shared parameters updated globally across the flyweight swarm collective.",
                 "cognitive_state": runtime_manager.get_cognitive_state()
             }
 

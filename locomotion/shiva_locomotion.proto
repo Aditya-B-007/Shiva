@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package shiva.locomotion;
+
+service LocomotionService {
+  // Streams a cognitive snapshot with transactional block verification
+  rpc TransferSnapshot (stream SnapshotChunk) returns (MigrationStatus);
+  
+  // Fetches a snapshot from a remote node via transactional ID
+  rpc FetchSnapshot (MigrationRequest) returns (stream SnapshotChunk);
+}
+
+message SnapshotMetadata {
+  string migration_id = 1;
+  string node_id = 2;
+  int64 total_bytes = 3;
+  string sha256_checksum = 4; // Crucial for structural weight verification
+}
+
+message SnapshotChunk {
+  oneof payload {
+    SnapshotMetadata metadata = 1; // First frame in the stream transmission
+    bytes chunk_data = 2;          // Sequential binary blocks
+  }
+}
+
+message MigrationRequest {
+  string migration_id = 1;
+}
+
+message MigrationStatus {
+  string migration_id = 1;
+  bool success = 2;
+  enum StatusCode {
+    OK = 0;
+    CHECKSUM_MISMATCH = 1;
+    TRANSMISSION_FAILURE = 2;
+    RESOURCE_EXHAUSTED = 3;
+  }
+  StatusCode code = 3;
+  string message = 4;
+}

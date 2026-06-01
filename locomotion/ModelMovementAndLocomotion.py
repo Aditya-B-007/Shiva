@@ -1,497 +1,375 @@
 from __future__ import annotations
 import hashlib
-import hmac
-import io
-import json
-import time
-import uuid
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
-from urllib import request as urllib_request
-import torch
-import torch.nn as nn
+import logging
+import sys
+from typing import Iterator, Dict, Optional
+from concurrent import futures
+
+import grpc
+import shiva_locomotion_pb2
+import shiva_locomotion_pb2_grpc
+
 from core.interfaces import ICognitiveSnapshot, ILocomotionTransport
 
-SNAPSHOT_SCHEMA_VERSION = "1.0.0"
-
-
-# ---------------------------------------------------------------------------
-# CognitiveSnapshot
-# ---------------------------------------------------------------------------
-
-@dataclass
-class SnapshotMetadata:
-    schema_version: str = SNAPSHOT_SCHEMA_VERSION
-    node_id: str = ""
-    timestamp: float = field(default_factory=time.time)
-    payload_bytes: int = 0
-    hmac_hex: str = ""          # populated after serialisation
-    migration_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+# Configure structured production logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s (%(filename)s:%(lineno)d) - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("ShivaLocomotion")
 
 
 class CognitiveSnapshot(ICognitiveSnapshot):
     """
-    A fully self-contained, rehydratable representation of a Shiva node.
-
-    Serialisation format (big-endian, no external dependencies beyond torch):
-
-        [ 4 bytes  ] header_length (uint32)
-        [ N bytes  ] JSON header (SnapshotMetadata)
-        [ M bytes  ] torch.save() blob — the state dict bundle
-
-    The state dict bundle contains:
-        {
-          "model_state":     OrderedDict from policy.state_dict(),
-          "memory_bank":     list of episode dicts (detached tensors),
-          "emotional_state": { "mood": str, "homeostasis": Tensor[4] },
-          "identity_token":  Tensor[1, 1, D],
-        }
-
-    HMAC-SHA256 is computed over the JSON header + tensor blob concatenated.
-    The hex digest is stored inside the header's `hmac_hex` field.
-
-    Note on `weights_only`:
-        torch.load with weights_only=True restricts deserialisation to
-        safe tensor types only.  This is the secure default.  Set
-        `weights_only=False` only in a fully trusted environment.
+    Concrete implementation of ICognitiveSnapshot tracking metadata,
+    node identifier, and the raw target payload state.
     """
-
-    def __init__(
-        self,
-        metadata: SnapshotMetadata,
-        state_bundle: Dict[str, Any],
-        hmac_secret: Optional[bytes] = None,
-    ) -> None:
-        self.metadata = metadata
-        self._state_bundle = state_bundle
-        self._hmac_secret = hmac_secret or b"shiva-dev-secret"
-
-    # ------------------------------------------------------------------
-    # ICognitiveSnapshot
-    # ------------------------------------------------------------------
-
-    def serialise(self) -> bytes:
-        """
-        Pack cognitive state into a signed, versioned byte payload.
-
-        Steps:
-          1. torch.save the state bundle to an in-memory buffer.
-          2. Update metadata with the buffer length.
-          3. Compute HMAC-SHA256 over (header_json + tensor_blob).
-          4. Pack: [uint32 header_len][header_json][tensor_blob].
-        """
-        # Serialise the tensor bundle.
-        tensor_buf = io.BytesIO()
-        torch.save(self._state_bundle, tensor_buf)
-        tensor_bytes = tensor_buf.getvalue()
-
-        # Compute HMAC over tensor payload first (header not yet final).
-        self.metadata.payload_bytes = len(tensor_bytes)
-        self.metadata.hmac_hex = ""   # zero out before signing
-
-        header_json = json.dumps(
-            {
-                "schema_version": self.metadata.schema_version,
-                "node_id": self.metadata.node_id,
-                "timestamp": self.metadata.timestamp,
-                "payload_bytes": self.metadata.payload_bytes,
-                "migration_id": self.metadata.migration_id,
-            }
-        ).encode("utf-8")
-
-        sig = hmac.new(
-            self._hmac_secret,
-            header_json + tensor_bytes,
-            hashlib.sha256,
-        ).hexdigest()
-        self.metadata.hmac_hex = sig
-
-        # Re-serialise header with HMAC included.
-        header_json = json.dumps(
-            {
-                "schema_version": self.metadata.schema_version,
-                "node_id": self.metadata.node_id,
-                "timestamp": self.metadata.timestamp,
-                "payload_bytes": self.metadata.payload_bytes,
-                "hmac_hex": self.metadata.hmac_hex,
-                "migration_id": self.metadata.migration_id,
-            }
-        ).encode("utf-8")
-
-        header_len = len(header_json).to_bytes(4, "big")
-        return header_len + header_json + tensor_bytes
-
-    @classmethod
-    def deserialise(
-        cls,
-        payload: bytes,
-        hmac_secret: Optional[bytes] = None,
-    ) -> "CognitiveSnapshot":
-        """
-        Reconstruct a CognitiveSnapshot from a byte payload.
-
-        Raises ValueError on HMAC mismatch or schema version incompatibility.
-        """
-        secret = hmac_secret or b"shiva-dev-secret"
-
-        # Unpack.
-        header_len = int.from_bytes(payload[:4], "big")
-        header_json = payload[4 : 4 + header_len]
-        tensor_bytes = payload[4 + header_len :]
-
-        meta_dict = json.loads(header_json.decode("utf-8"))
-
-        # Schema version check.
-        if meta_dict.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
-            raise ValueError(
-                f"Snapshot schema version mismatch: "
-                f"expected {SNAPSHOT_SCHEMA_VERSION}, "
-                f"got {meta_dict.get('schema_version')}."
-            )
-
-        # HMAC verification.
-        received_sig = meta_dict.pop("hmac_hex", "")
-        clean_header = json.dumps(
-            {k: v for k, v in meta_dict.items() if k != "hmac_hex"}
-        ).encode("utf-8")
-        expected_sig = hmac.new(
-            secret, clean_header + tensor_bytes, hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(received_sig, expected_sig):
-            raise ValueError(
-                "CognitiveSnapshot HMAC verification failed. "
-                "Payload may be corrupted or tampered."
-            )
-
-        # Restore metadata.
-        metadata = SnapshotMetadata(
-            schema_version=meta_dict["schema_version"],
-            node_id=meta_dict.get("node_id", ""),
-            timestamp=meta_dict.get("timestamp", 0.0),
-            payload_bytes=meta_dict.get("payload_bytes", 0),
-            hmac_hex=received_sig,
-            migration_id=meta_dict.get("migration_id", ""),
-        )
-
-        # Restore tensor bundle.
-        buf = io.BytesIO(tensor_bytes)
-        state_bundle = torch.load(buf, weights_only=True, map_location="cpu")
-
-        return cls(metadata, state_bundle, secret)
-
-    # ------------------------------------------------------------------
-    # Convenience constructors and restoration
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def capture(
-        cls,
-        policy: nn.Module,
-        episodic_memory: nn.Module,
-        emotional_core: nn.Module,
-        node_id: str = "",
-        hmac_secret: Optional[bytes] = None,
-    ) -> "CognitiveSnapshot":
-        """
-        Capture a snapshot from live modules.
-
-        Accesses:
-            policy.state_dict()                            — model weights
-            episodic_memory._bank                          — episode deque
-            emotional_core._homeostasis.vector             — homeostasis state
-            emotional_core._mood.name                      — current mood
-            episodic_memory.self_token                     — identity token
-        """
-        # Serialise the episode bank: each episode has a 'states' tensor
-        # and a 'significance' float.
-        memory_bank = [
-            {
-                "states": ep["states"].cpu(),
-                "significance": float(ep["significance"]),
-            }
-            for ep in list(episodic_memory._bank)  # type: ignore[attr-defined]
-        ]
-
-        bundle = {
-            "model_state": {
-                k: v.cpu() for k, v in policy.state_dict().items()
-            },
-            "memory_bank": memory_bank,
-            "emotional_state": {
-                "mood": emotional_core._mood.name,  # type: ignore[attr-defined]
-                "homeostasis": emotional_core._homeostasis.vector.detach().cpu(),  # type: ignore[attr-defined]
-            },
-            "identity_token": episodic_memory.self_token.detach().cpu(),  # type: ignore[attr-defined]
-        }
-
-        metadata = SnapshotMetadata(node_id=node_id)
-        return cls(metadata, bundle, hmac_secret)
-
-    def restore(
-        self,
-        policy: nn.Module,
-        episodic_memory: nn.Module,
-        emotional_core: nn.Module,
-        device: str = "cpu",
-    ) -> None:
-        """
-        Restore the captured cognitive state into live modules in-place.
-
-        Accesses the same attributes as `capture`; modules must be
-        structurally compatible with the snapshot.
-        """
-        bundle = self._state_bundle
-        dev = torch.device(device)
-
-        # Restore model weights.
-        policy.load_state_dict(
-            {k: v.to(dev) for k, v in bundle["model_state"].items()},
-            strict=False,
-        )
-
-        # Restore episodic memory bank.
-        from collections import deque
-        episodic_memory._bank = deque(  # type: ignore[attr-defined]
-            [
-                {
-                    "states": ep["states"].to(dev),
-                    "significance": ep["significance"],
-                }
-                for ep in bundle["memory_bank"]
-            ],
-            maxlen=episodic_memory.capacity,  # type: ignore[attr-defined]
-        )
-
-        # Restore identity token.
-        with torch.no_grad():
-            episodic_memory.self_token.copy_(  # type: ignore[attr-defined]
-                bundle["identity_token"].to(dev)
-            )
-
-        # Restore emotional state.
-        emo = bundle["emotional_state"]
-        with torch.no_grad():
-            emotional_core._homeostasis._state.copy_(  # type: ignore[attr-defined]
-                emo["homeostasis"].to(dev)
-            )
-        emotional_core._mood.transition(emo["mood"], "Restored from snapshot")  # type: ignore[attr-defined]
+    def __init__(self, migration_id: str, node_id: str, payload: bytes) -> None:
+        self._migration_id = migration_id
+        self._node_id = node_id
+        self._payload = payload
 
     @property
     def migration_id(self) -> str:
-        return self.metadata.migration_id
+        return self._migration_id
 
     @property
     def node_id(self) -> str:
-        return self.metadata.node_id
+        return self._node_id
 
+    def serialise(self) -> bytes:
+        return self._payload
 
-# ---------------------------------------------------------------------------
-# HTTP transport (development / local use)
-# ---------------------------------------------------------------------------
+    @classmethod
+    def deserialise(cls, data: bytes) -> CognitiveSnapshot:
+        # Layout depends on internal serialization requirements.
+        # This assumes a primitive implementation for interface compatibility.
+        import pickle
+        obj = pickle.loads(data)
+        return cls(obj["migration_id"], obj["node_id"], obj["payload"])
 
-class HttpTransport(ILocomotionTransport):
-    """
-    Transmits cognitive snapshots over plain HTTP.
-
-    Protocol:
-      • POST  /migrate          — send snapshot bytes; server returns migration_id
-      • GET   /migrate/{id}     — poll for snapshot bytes; 202 = pending, 200 = ready
-
-    This transport is intentionally simple.  For production, use GrpcTransport
-    (mutual TLS, streaming, back-pressure) or replace entirely.
-
-    Security note: plain HTTP only for local development or a trusted
-    internal network.  Always terminate TLS at the load balancer in production.
-    """
-
-    _CONTENT_TYPE = "application/octet-stream"
-
-    def __init__(self, timeout_seconds: float = 30.0) -> None:
-        self.timeout = timeout_seconds
-
-    def send(self, snapshot: ICognitiveSnapshot, destination: str) -> str:
-        """
-        POST the snapshot payload to `destination/migrate`.
-
-        Args:
-            snapshot:    CognitiveSnapshot to transmit.
-            destination: Base URL, e.g. 'http://192.168.1.42:8080'.
-
-        Returns:
-            migration_id (str) assigned by the receiving server.
-        """
-        payload = snapshot.serialise()
-        url = destination.rstrip("/") + "/migrate"
-
-        req = urllib_request.Request(
-            url,
-            data=payload,
-            method="POST",
-            headers={"Content-Type": self._CONTENT_TYPE},
-        )
-        with urllib_request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
-            body = json.loads(resp.read().decode("utf-8"))
-            return body["migration_id"]
-
-    def receive(self, migration_id: str, source: str = "") -> "CognitiveSnapshot":
-        """
-        Poll `source/migrate/{migration_id}` until the snapshot is available.
-
-        Args:
-            migration_id: ID returned by a prior `send` call.
-            source:       Base URL of the sending node.
-
-        Returns:
-            Deserialised CognitiveSnapshot.
-        """
-        url = f"{source.rstrip('/')}/migrate/{migration_id}"
-        deadline = time.monotonic() + self.timeout
-        while time.monotonic() < deadline:
-            req = urllib_request.Request(url, method="GET")
-            with urllib_request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
-                if resp.status == 200:
-                    return CognitiveSnapshot.deserialise(resp.read())
-                elif resp.status == 202:
-                    time.sleep(0.5)   # pending — retry
-                else:
-                    raise RuntimeError(
-                        f"Unexpected status {resp.status} from {url}"
-                    )
-        raise TimeoutError(
-            f"Migration {migration_id} did not complete within {self.timeout}s."
-        )
-
-
-# ---------------------------------------------------------------------------
-# gRPC transport stub (production-grade)
-# ---------------------------------------------------------------------------
 
 class GrpcTransport(ILocomotionTransport):
     """
-    gRPC-based transport for production deployments.
-
-    Requires the `grpcio` package and a generated stub from the
-    `shiva_locomotion.proto` service definition:
-
-        service LocomotionService {
-          rpc Migrate (MigrateRequest) returns (MigrateResponse);
-          rpc Fetch   (FetchRequest)   returns (stream FetchResponse);
-        }
-
-    This class is a structural stub.  Implement `send` and `receive`
-    once the protobuf stubs are generated.
-
-    Advantages over HttpTransport:
-      • Bidirectional streaming — large snapshots chunked automatically.
-      • Mutual TLS built into the channel configuration.
-      • Back-pressure and flow control at the protocol level.
-      • ~10× lower latency than HTTP/JSON for binary payloads.
-    """
-
-    def __init__(self, channel_credentials=None) -> None:
-        self._credentials = channel_credentials
-        # Stub populated by `_connect(address)` before use.
-        self._stub = None
-
-    def send(self, snapshot: ICognitiveSnapshot, destination: str) -> str:
-        raise NotImplementedError(
-            "GrpcTransport.send requires grpcio and a generated proto stub. "
-            "Run `python -m grpc_tools.protoc` on shiva_locomotion.proto first."
-        )
-
-    def receive(self, migration_id: str) -> "CognitiveSnapshot":
-        raise NotImplementedError(
-            "GrpcTransport.receive requires grpcio and a generated proto stub."
-        )
-
-
-# ---------------------------------------------------------------------------
-# LocomotionEngine: orchestrates capture → send → receive → restore
-# ---------------------------------------------------------------------------
-
-class LocomotionEngine:
-    """
-    High-level API for migrating a Shiva node to a remote host.
-
-    Usage:
-        engine = LocomotionEngine(
-            transport=HttpTransport(),
-            hmac_secret=b"my-shared-secret",
-        )
-
-        # Outbound (sender side):
-        migration_id = engine.migrate_out(
-            policy=policy,
-            episodic_memory=episodic_memory,
-            emotional_core=emotional_core,
-            destination="http://10.0.0.5:8080",
-            node_id="shiva-alpha",
-        )
-
-        # Inbound (receiver side — called on the remote host):
-        engine.migrate_in(
-            migration_id=migration_id,
-            source="http://10.0.0.4:8080",
-            policy=policy,
-            episodic_memory=episodic_memory,
-            emotional_core=emotional_core,
-        )
+    Production-grade gRPC locomotion transport layer.
+    Features cryptographic payload checking, Keepalive ping management,
+    and granular RPC error handling.
     """
 
     def __init__(
         self,
-        transport: ILocomotionTransport,
-        hmac_secret: Optional[bytes] = None,
+        server_cert: Optional[bytes] = None,
+        private_key: Optional[bytes] = None,
+        root_certificates: Optional[bytes] = None,
+        max_chunk_size: int = 1024 * 1024,  # Bounded at 1MB per frame chunk
+        timeout_seconds: int = 300           # 5-minute timeout window
     ) -> None:
-        self.transport = transport
-        self.hmac_secret = hmac_secret or b"shiva-dev-secret"
+        self.server_cert = server_cert
+        self.private_key = private_key
+        self.root_certificates = root_certificates
+        self.max_chunk_size = max_chunk_size
+        self.timeout_seconds = timeout_seconds
 
-    def migrate_out(
-        self,
-        policy: nn.Module,
-        episodic_memory: nn.Module,
-        emotional_core: nn.Module,
-        destination: str,
-        node_id: str = "",
-    ) -> str:
-        """
-        Capture the current cognitive state and send it to `destination`.
+        # Configure hardened production channel options
+        self._channel_options = [
+            ('grpc.max_send_message_length', 512 * 1024 * 1024),     # Max send limit: 512MB
+            ('grpc.max_receive_message_length', 512 * 1024 * 1024),  # Max receive limit: 512MB
+            ('grpc.keepalive_time_ms', 30000),                       # Send pings every 30 seconds if idle
+            ('grpc.keepalive_timeout_ms', 10000),                    # Wait 10 seconds for keepalive ack
+            ('grpc.keepalive_permit_without_calls', 1),              # Allow keepalive pings without active calls
+            ('grpc.http2.max_pings_without_data', 0),                # Unlimited pings
+            ('grpc.http2.min_time_between_pings_ms', 10000),         # Min 10 seconds between pings
+        ]
 
-        Returns the migration_id for the receiver to use when calling
-        `migrate_in`.
+    def _create_credentials(self) -> Optional[grpc.ChannelCredentials]:
+        if self.private_key and self.server_cert and self.root_certificates:
+            try:
+                return grpc.ssl_channel_credentials(
+                    root_certificates=self.root_certificates,
+                    private_key=self.private_key,
+                    certificate_chain=self.server_cert,
+                )
+            except Exception as e:
+                logger.error(f"Failed to compile secure mTLS credentials: {str(e)}")
+                raise RuntimeError("Invalid security credentials provided for gRPC transport.")
+        return None
+
+    def send(self, snapshot: ICognitiveSnapshot, destination: str) -> str:
         """
-        snapshot = CognitiveSnapshot.capture(
-            policy=policy,
-            episodic_memory=episodic_memory,
-            emotional_core=emotional_core,
-            node_id=node_id,
-            hmac_secret=self.hmac_secret,
+        Packs, hashes, and streams a serialized cognitive snapshot to a target host destination.
+        """
+        payload = snapshot.serialise()
+        total_bytes = len(payload)
+        migration_id = snapshot.migration_id
+        node_id = snapshot.node_id
+
+        # Compute SHA-256 validation checksum
+        sha256_hash = hashlib.sha256(payload).hexdigest()
+        logger.info(f"Initiating locomotion upload for node {node_id} to {destination}. Payload size: {total_bytes} bytes. Hash: {sha256_hash}")
+
+        creds = self._create_credentials()
+        channel = (
+            grpc.secure_channel(destination, creds, options=self._channel_options)
+            if creds
+            else grpc.insecure_channel(destination, options=self._channel_options)
         )
-        migration_id = self.transport.send(snapshot, destination)
-        return migration_id
 
-    def migrate_in(
-        self,
-        migration_id: str,
-        source: str,
-        policy: nn.Module,
-        episodic_memory: nn.Module,
-        emotional_core: nn.Module,
-        device: str = "cpu",
-    ) -> None:
+        with channel:
+            stub = shiva_locomotion_pb2_grpc.LocomotionServiceStub(channel)
+
+            def chunk_generator() -> Iterator[shiva_locomotion_pb2.SnapshotChunk]:
+                # Stream metadata frame first
+                metadata = shiva_locomotion_pb2.SnapshotMetadata(
+                    migration_id=migration_id,
+                    node_id=node_id,
+                    total_bytes=total_bytes,
+                    sha256_checksum=sha256_hash
+                )
+                yield shiva_locomotion_pb2.SnapshotChunk(metadata=metadata)
+
+                # Stream raw binary frames sequentially
+                for i in range(0, total_bytes, self.max_chunk_size):
+                    chunk_slice = payload[i : i + self.max_chunk_size]
+                    yield shiva_locomotion_pb2.SnapshotChunk(chunk_data=chunk_slice)
+
+            try:
+                # Execute blocking streaming request with an explicit deadline timeout
+                response = stub.TransferSnapshot(chunk_generator(), timeout=self.timeout_seconds)
+                
+                if not response.success:
+                    err_msg = f"Remote destination rejected locomotion. Reason: {response.message} (Code: {response.code})"
+                    logger.error(err_msg)
+                    raise RuntimeError(err_msg)
+
+                logger.info(f"Locomotion transmission successfully finalized for migration ID: {response.migration_id}")
+                return response.migration_id
+
+            except grpc.RpcError as rpc_err:
+                status_code = rpc_err.code()
+                details = rpc_err.details()
+                logger.error(f"gRPC locomotion transmission aborted. Code: {status_code}, Context Details: {details}")
+                raise RuntimeError(f"Network transport error during locomotion [{status_code}]: {details}")
+
+
+    def receive(self, migration_id: str, source: str = "") -> CognitiveSnapshot:
         """
-        Receive a snapshot from `source` and restore it into the provided
-        modules in-place.
+        Fetches an operational weight snapshot from a target remote node and validates data integrity.
         """
-        snapshot = self.transport.receive(migration_id, source)
-        if not isinstance(snapshot, CognitiveSnapshot):
-            raise TypeError(
-                f"Transport returned {type(snapshot).__name__}, "
-                "expected CognitiveSnapshot."
+        if not source:
+            raise ValueError("A valid source endpoint address must be specified for fetch locomotion requests.")
+
+        logger.info(f"Requesting snapshot download for migration reference: {migration_id} from {source}")
+        creds = self._create_credentials()
+        channel = (
+            grpc.secure_channel(source, creds, options=self._channel_options)
+            if creds
+            else grpc.insecure_channel(source, options=self._channel_options)
+        )
+
+        with channel:
+            stub = shiva_locomotion_pb2_grpc.LocomotionServiceStub(channel)
+            request = shiva_locomotion_pb2.MigrationRequest(migration_id=migration_id)
+
+            try:
+                response_stream = stub.FetchSnapshot(request, timeout=self.timeout_seconds)
+                
+                payload_buffer = bytearray()
+                expected_hash: Optional[str] = None
+                expected_size: int = 0
+                node_id: str = "unknown"
+                metadata_parsed = False
+
+                for frame in response_stream:
+                    frame_type = frame.WhichOneof("payload")
+                    
+                    if not metadata_parsed:
+                        if frame_type != "metadata":
+                            raise RuntimeError("Protocol violation: Received data chunk before metadata block.")
+                        
+                        meta = frame.metadata
+                        expected_hash = meta.sha256_checksum
+                        expected_size = meta.total_bytes
+                        node_id = meta.node_id
+                        metadata_parsed = True
+                        logger.info(f"Stream metadata initialized. Target size: {expected_size} bytes. Checking validation signature...")
+                        continue
+
+                    if frame_type == "chunk_data":
+                        payload_buffer.extend(frame.chunk_data)
+
+                if len(payload_buffer) == 0:
+                    raise RuntimeError(f"Received empty payload stream for migration index: {migration_id}")
+
+                if len(payload_buffer) != expected_size:
+                    raise RuntimeError(f"Payload size mismatch. Received: {len(payload_buffer)}, Expected: {expected_size}")
+
+                # Compute runtime SHA-256 verification signature
+                actual_hash = hashlib.sha256(payload_buffer).hexdigest()
+                if actual_hash != expected_hash:
+                    logger.critical(f"CRITICAL: Cryptographic payload validation failed! In-transit modification suspected. Calculated: {actual_hash}, Expected: {expected_hash}")
+                    raise RuntimeError("Locomotion aborted: SHA-256 data validation signature verification mismatch.")
+
+                logger.info(f"Snapshot integrity confirmed. Reassembling memory structures for node: {node_id}")
+                return CognitiveSnapshot(migration_id, node_id, bytes(payload_buffer))
+
+            except grpc.RpcError as rpc_err:
+                logger.error(f"Failed to fetch remote snapshot context: {rpc_err.code()} - {rpc_err.details()}")
+                raise RuntimeError(f"Locomotion retrieval failed [{rpc_err.code()}]: {rpc_err.details()}")
+
+
+# ---------------------------------------------------------------------------
+# Server-Side Implementation Logic
+# ---------------------------------------------------------------------------
+
+class LocomotionServicer(shiva_locomotion_pb2_grpc.LocomotionServiceServicer):
+    """
+    Thread-safe gRPC recipient servicer node designed to parse incoming weight streams.
+    """
+
+    def __init__(self, storage_registry: Optional[Dict[str, bytes]] = None) -> None:
+        # Thread-safe context mapping
+        self.storage = storage_registry if storage_registry is not None else {}
+
+    def TransferSnapshot(self, request_iterator, context) -> shiva_locomotion_pb2.MigrationStatus:
+        payload_buffer = bytearray()
+        migration_id: Optional[str] = None
+        node_id: Optional[str] = None
+        expected_hash: Optional[str] = None
+        expected_size: int = 0
+        metadata_received = False
+
+        try:
+            for frame in request_iterator:
+                # Real-time client cancellation processing check
+                if not context.is_active():
+                    logger.warning("Locomotion call abandoned by upstream client.")
+                    return shiva_locomotion_pb2.MigrationStatus(
+                        success=False,
+                        code=shiva_locomotion_pb2.MigrationStatus.StatusCode.TRANSMISSION_FAILURE,
+                        message="Context cancellation triggered."
+                    )
+
+                frame_type = frame.WhichOneof("payload")
+
+                if not metadata_received:
+                    if frame_type != "metadata":
+                        context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                        context.set_details("Metadata sequence descriptor frame must lead payload stream.")
+                        return shiva_locomotion_pb2.MigrationStatus(
+                            success=False,
+                            code=shiva_locomotion_pb2.MigrationStatus.StatusCode.TRANSMISSION_FAILURE,
+                            message="Invalid transaction sequencing."
+                        )
+                    
+                    meta = frame.metadata
+                    migration_id = meta.migration_id
+                    node_id = meta.node_id
+                    expected_hash = meta.sha256_checksum
+                    expected_size = meta.total_bytes
+                    metadata_received = True
+                    continue
+
+                if frame_type == "chunk_data":
+                    payload_buffer.extend(frame.chunk_data)
+
+            if not migration_id or len(payload_buffer) == 0:
+                return shiva_locomotion_pb2.MigrationStatus(
+                    success=False,
+                    code=shiva_locomotion_pb2.MigrationStatus.StatusCode.TRANSMISSION_FAILURE,
+                    message="Incomplete or missing transmission data segments."
+                )
+
+            # Evaluate tracking metrics and integrity constraints
+            if len(payload_buffer) != expected_size:
+                return shiva_locomotion_pb2.MigrationStatus(
+                    migration_id=migration_id,
+                    success=False,
+                    code=shiva_locomotion_pb2.MigrationStatus.StatusCode.TRANSMISSION_FAILURE,
+                    message=f"Size validation anomaly. Written: {len(payload_buffer)}, Bound: {expected_size}"
+                )
+
+            calculated_hash = hashlib.sha256(payload_buffer).hexdigest()
+            if calculated_hash != expected_hash:
+                logger.error(f"Inbound verification failure for migration {migration_id}. Expected: {expected_hash}, Calculated: {calculated_hash}")
+                return shiva_locomotion_pb2.MigrationStatus(
+                    migration_id=migration_id,
+                    success=False,
+                    code=shiva_locomotion_pb2.MigrationStatus.StatusCode.CHECKSUM_MISMATCH,
+                    message="Payload signature verification failed. Bits corrupted in transit."
+                )
+
+            # Cache the confirmed snapshot payload state
+            self.storage[migration_id] = bytes(payload_buffer)
+            logger.info(f"Node {node_id} successfully reassembled via migration ID: {migration_id}")
+
+            return shiva_locomotion_pb2.MigrationStatus(
+                migration_id=migration_id,
+                success=True,
+                code=shiva_locomotion_pb2.MigrationStatus.StatusCode.OK,
+                message="Snapshot reassembled and committed to local storage."
             )
-        snapshot.restore(
-            policy=policy,
-            episodic_memory=episodic_memory,
-            emotional_core=emotional_core,
-            device=device,
+
+        except Exception as err:
+            logger.exception(f"Unhandled system error encountered in locomotion receiver channel: {str(err)}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Internal processing failure: {str(err)}")
+            return shiva_locomotion_pb2.MigrationStatus(
+                success=False,
+                code=shiva_locomotion_pb2.MigrationStatus.StatusCode.TRANSMISSION_FAILURE,
+                message=str(err)
+            )
+
+    def FetchSnapshot(self, request, context) -> Iterator[shiva_locomotion_pb2.SnapshotChunk]:
+        migration_id = request.migration_id
+        
+        if migration_id not in self.storage:
+            context.set_code(grpc.StatusCode.NOT_FOUND)
+            context.set_details(f"Requested migration footprint profile {migration_id} not available.")
+            return
+
+        payload = self.storage[migration_id]
+        sha256_hash = hashlib.sha256(payload).hexdigest()
+        max_chunk_size = 1024 * 1024
+
+        # Stream metadata descriptor frame
+        metadata = shiva_locomotion_pb2.SnapshotMetadata(
+            migration_id=migration_id,
+            node_id="fetched_node_context",
+            total_bytes=len(payload),
+            sha256_checksum=sha256_hash
         )
+        yield shiva_locomotion_pb2.SnapshotChunk(metadata=metadata)
+
+        # Stream sequential data frames
+        for i in range(0, len(payload), max_chunk_size):
+            if not context.is_active():
+                logger.warning(f"Downstream consumer aborted call connection while processing fetch: {migration_id}")
+                break
+            yield shiva_locomotion_pb2.SnapshotChunk(chunk_data=payload[i : i + max_chunk_size])
+
+
+# ---------------------------------------------------------------------------
+# Server Runtime Initialization Helper
+# ---------------------------------------------------------------------------
+
+def start_locomotion_server(endpoint: str, storage_registry: dict) -> grpc.Server:
+    server_options = [
+        ('grpc.max_send_message_length', 512 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 512 * 1024 * 1024),
+        ('grpc.keepalive_time_ms', 30000),
+        ('grpc.keepalive_timeout_ms', 10000),
+    ]
+    
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=10),
+        options=server_options
+    )
+    
+    servicer = LocomotionServicer(storage_registry=storage_registry)
+    shiva_locomotion_pb2_grpc.add_LocomotionServiceServicer_to_server(servicer, server)
+    
+    server.add_insecure_port(endpoint)
+    server.start()
+    logger.info(f"Shiva Locomotion gRPC Server successfully initialized on port/endpoint: {endpoint}")
+    return server
