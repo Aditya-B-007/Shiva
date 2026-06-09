@@ -8,13 +8,14 @@ from .runtime import runtime_manager
 from .attachment import attachment_manager
 from .merge import merge_manager
 from .execution import execution_manager, ExecutionDirective
+import os
 
 app = FastAPI(title="Shiva AGI Local Gateway", version="1.0.0")
 
 # PRODUCTION CHECK: Restrict CORS origins instead of wildcards
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], 
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],

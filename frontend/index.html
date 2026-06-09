@@ -181,7 +181,9 @@
             appendLog("SYS", `Initiating FrankenMerge for ${modelName}. Running Truncated SVD...`, "source-sys");
 
             try {
-                const response = await fetch(`${API_BASE}/${modelId}ModelMerge`);
+                const response = await fetch(`${API_BASE}/models/${modelId}/merge`, {
+	           method: 'POST'
+	           });const response = await fetch(`${API_BASE}/${modelId}ModelMerge`);
                 const data = await response.json();
 
                 if (!response.ok) throw new Error(data.detail);

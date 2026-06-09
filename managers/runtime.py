@@ -29,7 +29,7 @@ class ShivaBackboneWrapper(nn.Module):
         
     def forward_pass(self, text_directive: str, device: torch.device):
         embedded_input = self.tokenizer_layer(text_directive, device)
-        return self.block(embedded_input)
+        return self.block.forward_pass(embedded_input)
 
 class ShivaRuntimeManager:
     def __init__(self, d_model: int = 512, action_dim: int = 64):
@@ -56,8 +56,7 @@ class ShivaRuntimeManager:
 
         self.swarm = SwarmCoordinator(
             latent_dim=d_model,
-            n_nodes=100,  # Clear default sizing
-            action_dim=action_dim,
+            n_nodes=100,
             archetype_policy=self.policy,
             archetype_emotional_core=self.emotional_core
         ).to(self.device)

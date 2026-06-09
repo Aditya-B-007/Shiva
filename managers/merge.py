@@ -18,7 +18,10 @@ class FrankenMergeManager:
             return {"success": False, "error": "Model architecture is incompatible."}
         base_path = Path(model_info["path"])
         weight_files = model_info["files"]["weights"]
-        weight_path = base_path / weight_files[0]
+        try:
+            ext_state_dict = attachment_manager.load_full_state_dict(model_id)
+        except Exception as e:
+            return {"success": False, "error": f"Failed to assemble weights: {str(e)}"}weight_path = base_path / weight_files[0]
         
         try:
             if weight_path.suffix == ".safetensors":
