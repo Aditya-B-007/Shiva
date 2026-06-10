@@ -89,16 +89,16 @@ class AttachmentManager:
         return {"success": True, "model": model_data}
 
     def load_full_state_dict(self, model_id: str) -> dict:
-        """Assembles unified state dict tensors from sharded weight files, with native GGUF parsing."""
+        """Assembles unified state dict tensors with dynamically-scaled reshaping rules."""
+        import gc
         model_info = self.attached_models.get(model_id)
-        base_path = Path(model_info["path"]) # type: ignore
-        weight_files = model_info["files"]["weights"] # type: ignore
+        base_path = Path(model_info["path"])
+        weight_files = model_info["files"]["weights"]
         
         combined_state_dict = {}
         for f_name in weight_files:
             f_path = base_path / f_name
             try:
-                # Check for GGUF Magic Header before passing to PyTorch
                 is_gguf = False
                 if f_path.exists():
                     with open(f_path, "rb") as test_f:
@@ -107,22 +107,38 @@ class AttachmentManager:
                             is_gguf = True
 
                 if is_gguf:
-                    # Parse using the gguf reader to extract raw tensor maps
                     from gguf import GGUFReader
                     reader = GGUFReader(str(f_path))
+                    hidden_size = 2048
+                    for field in reader.fields.values():
+                        if "embedding_length" in field.name or "hidden_size" in field.name:
+                            if field.parts:
+                                hidden_size = int(field.parts[-1][0])
+                                break
                     
                     for tensor in reader.tensors:
                         name = tensor.name
+                        
+                        # Memory cleanup optimizations
                         data_ndarray = tensor.data
-                        tensor_data = torch.from_numpy(data_ndarray.copy()).float()
-                    
-                        if tensor_data.dim() == 1 and tensor_data.size(0) >= 512:
+                        if "output.weight" in name or "token_embd" in name:
+                            continue
+                            
+                        tensor_data = torch.from_numpy(data_ndarray)
+                        
+                        if tensor_data.dtype != torch.float32:
+                            tensor_data = tensor_data.to(torch.float32)
+                        if tensor_data.dim() == 1 and tensor_data.size(0) > hidden_size:
                             dim = tensor_data.size(0)
-                            hidden = 4096 # Fallback dimension matching standard config
-                            if dim % hidden == 0:
-                                tensor_data = tensor_data.view(dim // hidden, hidden)
+                            if dim % hidden_size == 0:
+                                tensor_data = tensor_data.view(dim // hidden_size, hidden_size)
                         
                         combined_state_dict[name] = tensor_data
+                        
+                        del data_ndarray
+                        tensor = None
+                    
+                    gc.collect()
                 
                 elif f_path.suffix == ".safetensors":
                     shard = load_file(str(f_path), device="cpu")
@@ -133,7 +149,8 @@ class AttachmentManager:
                     
             except Exception as e:
                 raise RuntimeError(f"Failed parsing state fragment {f_name}: {str(e)}")
-            
+                
+        # Remap keys to standard attention formats
         normalized_state_dict = {}
         for k, v in combined_state_dict.items():
             norm_key = k
