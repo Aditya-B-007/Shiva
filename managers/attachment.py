@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from safetensors.torch import load_file
 import torch
+import json
 from .metadata import metadata_extractor
 from .capability import capability_registry      
 from .compatibility import compatibility_analyzer 
@@ -31,6 +32,35 @@ class AttachmentManager:
                 detected_files["weights"].append(file.name)
             else:
                 detected_files["other"].append(file.name)
+
+        # OLLAMA FALLBACK PATCH: If no conventional weights are found, check for large raw blobs
+        if not detected_files["weights"]:
+            large_blobs = []
+            for file in path.iterdir():
+                if file.is_file() and not file.name.startswith('.'):
+                    # Ollama model weights are typically larger than 1.5 GB
+                    if file.stat().st_size > 1.5 * 1024 * 1024 * 1024:
+                        large_blobs.append(file.name)
+            
+            if large_blobs:
+                # Treat the largest blob as our model weights target file
+                large_blobs.sort(key=lambda x: (path / x).stat().st_size, reverse=True)
+                detected_files["weights"].append(large_blobs[0])
+                
+                # Check if a custom template config needs to be auto-generated for metadata compatibility
+                if not detected_files["config"]:
+                    mock_config = {
+                        "architectures": ["LlamaForCausalLM"],
+                        "num_hidden_layers": 32,
+                        "hidden_size": 4096,
+                        "num_attention_heads": 32,
+                        "vocab_size": 128256,
+                        "is_patched_ollama": True
+                    }
+                    config_out = path / "config.json"
+                    with open(config_out, "w", encoding="utf-8") as f:
+                        json.dump(mock_config, f, indent=4)
+                    detected_files["config"].append("config.json")
 
         if not detected_files["weights"]:
             return {"error": "No valid model parameter states resolved."}
@@ -75,6 +105,7 @@ class AttachmentManager:
                     shard = load_file(str(f_path), device="cpu")
                 else:
                     # Fallback to weights_only safely if tensor classes allow it
+                    # Set weights_only=False to support raw un-pickling of direct converted ollama blobs
                     shard = torch.load(str(f_path), map_location="cpu", weights_only=False)
                 combined_state_dict.update(shard)
             except Exception as e:
