@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from safetensors.torch import load_file
 import torch
@@ -92,8 +91,8 @@ class AttachmentManager:
     def load_full_state_dict(self, model_id: str) -> dict:
         """Assembles unified state dict tensors from sharded weight files, with native GGUF parsing."""
         model_info = self.attached_models.get(model_id)
-        base_path = Path(model_info["path"])
-        weight_files = model_info["files"]["weights"]
+        base_path = Path(model_info["path"]) # type: ignore
+        weight_files = model_info["files"]["weights"] # type: ignore
         
         combined_state_dict = {}
         for f_name in weight_files:
