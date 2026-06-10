@@ -90,25 +90,59 @@ class AttachmentManager:
         return {"success": True, "model": model_data}
 
     def load_full_state_dict(self, model_id: str) -> dict:
-        """Assembles unified state dict tensors from sharded weight files."""
+        """Assembles unified state dict tensors from sharded weight files, with native GGUF parsing."""
         model_info = self.attached_models.get(model_id)
-        base_path = Path(model_info["path"]) # type: ignore
-        weight_files = model_info["files"]["weights"] # type: ignore
+        base_path = Path(model_info["path"])
+        weight_files = model_info["files"]["weights"]
         
         combined_state_dict = {}
         for f_name in weight_files:
             f_path = base_path / f_name
             try:
-                if f_path.suffix == ".safetensors":
+                # Check for GGUF Magic Header before passing to PyTorch
+                is_gguf = False
+                if f_path.exists():
+                    with open(f_path, "rb") as test_f:
+                        header = test_f.read(4)
+                        if header == b"GGUF":
+                            is_gguf = True
+
+                if is_gguf:
+                    # Parse using the gguf reader to extract raw tensor maps
+                    from gguf import GGUFReader
+                    reader = GGUFReader(str(f_path))
+                    
+                    for tensor in reader.tensors:
+                        name = tensor.name
+                        data_ndarray = tensor.data
+                        tensor_data = torch.from_numpy(data_ndarray.copy()).float()
+                    
+                        if tensor_data.dim() == 1 and tensor_data.size(0) >= 512:
+                            dim = tensor_data.size(0)
+                            hidden = 4096 # Fallback dimension matching standard config
+                            if dim % hidden == 0:
+                                tensor_data = tensor_data.view(dim // hidden, hidden)
+                        
+                        combined_state_dict[name] = tensor_data
+                
+                elif f_path.suffix == ".safetensors":
                     shard = load_file(str(f_path), device="cpu")
+                    combined_state_dict.update(shard)
                 else:
-                    # Fallback to weights_only safely if tensor classes allow it
-                    # Set weights_only=False to support raw un-pickling of direct converted ollama blobs
                     shard = torch.load(str(f_path), map_location="cpu", weights_only=False)
-                combined_state_dict.update(shard)
+                    combined_state_dict.update(shard)
+                    
             except Exception as e:
                 raise RuntimeError(f"Failed parsing state fragment {f_name}: {str(e)}")
-        return combined_state_dict
+            
+        normalized_state_dict = {}
+        for k, v in combined_state_dict.items():
+            norm_key = k
+            if "blk." in k:
+                norm_key = k.replace("blk.", "layers.").replace("attn_", "attention.")
+            normalized_state_dict[norm_key] = v
+
+        return normalized_state_dict
 
     def list_attached_models(self) -> dict:
         return self.attached_models
