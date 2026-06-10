@@ -32,8 +32,6 @@ class AttachmentManager:
                 detected_files["weights"].append(file.name)
             else:
                 detected_files["other"].append(file.name)
-
-        # OLLAMA FALLBACK PATCH: If no conventional weights are found, check for large raw blobs
         if not detected_files["weights"]:
             large_blobs = []
             for file in path.iterdir():
