@@ -117,7 +117,7 @@
     </main>
 
     <script>
-        const API_BASE = "http://localhost:5123";
+        const API_BASE = "http://127.0.0.1:5123";
         let activeModelId = null;
 
         function getTimestamp() {
@@ -182,8 +182,8 @@
 
             try {
                 const response = await fetch(`${API_BASE}/models/${modelId}/merge`, {
-	           method: 'POST'
-	           });const response = await fetch(`${API_BASE}/${modelId}ModelMerge`);
+                    method: 'POST'
+                });
                 const data = await response.json();
 
                 if (!response.ok) throw new Error(data.detail);

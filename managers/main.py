@@ -24,19 +24,13 @@ app.add_middleware(
 # Async Lock instantiation to guarantee mutual exclusion over shared global mutable model variables
 state_mutation_lock = asyncio.Lock()
 
-# Define structural absolute boundary path for sandboxing
-SECURE_WORKSPACE_ROOT = Path(os.getcwd()).resolve()
+SECURE_WORKSPACE_ROOT = Path.home().resolve()
 
 def validate_secure_path(user_input_path: str) -> Path:
-    """Blocks local path traversal exploits outside working directories."""
     target_path = Path(user_input_path).resolve()
-    if os.name == 'nt':
-        # On Windows, ensure it's within root or explicitly marked safe folders
-        if not str(target_path).startswith(str(SECURE_WORKSPACE_ROOT)):
-             raise HTTPException(status_code=403, detail="Access Denied: Path exits secure sandbox boundary.")
-    else:
-        if not SECURE_WORKSPACE_ROOT in target_path.parents and target_path != SECURE_WORKSPACE_ROOT:
-            raise HTTPException(status_code=403, detail="Access Denied: Path exits secure sandbox boundary.")
+    # Use is_relative_to for a robust, cross-platform check (Python 3.9+)
+    if not target_path.is_relative_to(SECURE_WORKSPACE_ROOT):
+        raise HTTPException(status_code=403, detail="Access Denied: Path exits secure sandbox boundary.")
     return target_path
 
 class ModelAttachRequest(BaseModel):

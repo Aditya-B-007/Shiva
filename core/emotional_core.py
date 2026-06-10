@@ -8,13 +8,6 @@ from core.latent_alignment import LatentAligner
 # ---------------------------------------------------------------------------
 
 class MoodState:
-    """
-    Tracks a single named emotion and the reason for the most recent change.
-
-    This class owns *only* mood identity bookkeeping.  It performs no tensor
-    operations and carries no network parameters.
-    """
-
     def __init__(self, initial_mood: str, valid_vocab: dict) -> None:
         if initial_mood not in valid_vocab:
             raise ValueError(
@@ -46,7 +39,7 @@ class MoodState:
 # ---------------------------------------------------------------------------
 
 class HomeostasisState:
-"""
+    """
     Dimensions (by convention, mirroring the original codebase):
       [0] arousal-like  – increases with environmental surprise
       [1] energy-like   – decreases with action cost

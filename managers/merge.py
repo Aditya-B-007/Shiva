@@ -21,15 +21,7 @@ class FrankenMergeManager:
         try:
             ext_state_dict = attachment_manager.load_full_state_dict(model_id)
         except Exception as e:
-            return {"success": False, "error": f"Failed to assemble weights: {str(e)}"}weight_path = base_path / weight_files[0]
-        
-        try:
-            if weight_path.suffix == ".safetensors":
-                ext_state_dict = load_file(weight_path)
-            else:
-                ext_state_dict = torch.load(weight_path, map_location="cpu", weights_only=True)
-        except Exception as e:
-            return {"success": False, "error": f"Failed to load weights: {str(e)}"}
+            return {"success": False, "error": f"Failed to assemble weights: {str(e)}"}
         ext_config = {
             "num_heads": model_info["metadata"]["heads"],
             "hidden_size": model_info["metadata"]["hidden_size"]
