@@ -31,6 +31,9 @@ class MetadataExtractor:
             metadata["heads"] = config_data.get("num_attention_heads", 0)
             metadata["vocab_size"] = config_data.get("vocab_size", 0)
             metadata["context_window"] = config_data.get("max_position_embeddings", 0)
+            
+            if config_data.get("is_patched_ollama"):
+                metadata["parameters"] = "Ollama Blob State (Auto-fitted)"
 
         except Exception as e:
             metadata["extraction_error"] = str(e)
