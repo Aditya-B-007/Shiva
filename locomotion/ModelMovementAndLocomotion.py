@@ -6,8 +6,12 @@ from typing import Iterator, Dict, Optional
 from concurrent import futures
 
 import grpc
-import shiva_locomotion_pb2
-import shiva_locomotion_pb2_grpc
+try:
+    import shiva_locomotion_pb2
+    import shiva_locomotion_pb2_grpc
+except ImportError:
+    from locomotion import shiva_locomotion_pb2
+    from locomotion import shiva_locomotion_pb2_grpc
 
 from core.interfaces import ICognitiveSnapshot, ILocomotionTransport
 

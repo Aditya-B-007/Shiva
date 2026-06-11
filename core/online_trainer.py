@@ -7,7 +7,6 @@ from core.emotional_core import EmotionalCore
 from core.shiva_policy import ContinuousSACPolicy
 from parasite.ModelWeightParasiticExtraction import ParasiticExtractor
 import copy
-from locomotion.ModelMovementAndLocomotion import LocomotionEngine
 
 # ---------------------------------------------------------------------------
 # SumTree: Vectorized Binary Tree Structure
@@ -176,7 +175,7 @@ class ShivaTrainer:
         tau: float = 0.005,
         alpha_entropy: float = 0.2,
         device: str = "cpu",
-        locomotion_engine: LocomotionEngine | None = None
+        locomotion_engine: Any | None = None
     ) -> None:
         self.device = torch.device(device)
         self.policy = policy.to(self.device)

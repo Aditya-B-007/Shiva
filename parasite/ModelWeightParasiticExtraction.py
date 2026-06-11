@@ -3,7 +3,6 @@ import copy
 from typing import List, Optional
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.hooks import RemovableHandle
 from core.interfaces import IAlignmentLoss, IRepresentationProbe
 
@@ -179,17 +178,17 @@ class ParasiticExtractor(IRepresentationProbe, nn.Module):
 
     def probe_context(self, host_model: nn.Module, layer_name: str):
         class _Ctx:
-            def __init__(self_, extractor, model, name):
-                self_._extractor = extractor
-                self_._model = model
-                self_._name = name
+            def __init__(self, extractor, model, name):
+                self._extractor = extractor
+                self._model = model
+                self._name = name
 
-            def __enter__(self_):
-                self_._extractor.attach(self_._model, self_._name)
-                return self_._extractor
+            def __enter__(self):
+                self._extractor.attach(self._model, self._name)
+                return self._extractor
 
-            def __exit__(self_, *args):
-                self_._extractor.detach()
+            def __exit__(self, *args):
+                self._extractor.detach()
 
         return _Ctx(self, host_model, layer_name)
 

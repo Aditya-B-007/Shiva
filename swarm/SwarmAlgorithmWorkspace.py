@@ -1,12 +1,13 @@
 from __future__ import annotations
 import math
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import Normal
 from core.interfaces import IGlobalWorkspace, ISwarmNode
 from core.shiva_policy import ContinuousSACPolicy
-from core.emotional_core import EmotionalCore, MoodState, HomeostasisState
+from core.emotional_core import EmotionalCore
 from core.episodic_memory import EpisodicMemory
 
 # ---------------------------------------------------------------------------
@@ -76,7 +77,6 @@ class SwarmNode(ISwarmNode, nn.Module):
         blended_log_std = g * log_std1 + (1 - g) * log_std2
         
         std = torch.exp(blended_log_std)
-        from torch.distributions import Normal
         dist = Normal(blended_mu, std)
         x_t = dist.rsample()
         
