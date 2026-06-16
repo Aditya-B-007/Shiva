@@ -35,6 +35,7 @@ class ShivaRuntimeManager:
     def __init__(self, d_model: int = 512, action_dim: int = 64):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.d_model = d_model
+        self.sql_memory = Hippocampus(db_path="shiva_sqlite_memory.db")
         dummy_encoders = nn.ModuleDict({"text": nn.Linear(256, d_model)})
         self.aligner = LatentAligner(encoders=dummy_encoders, d_model=d_model).to(self.device)
         self.emotional_core = EmotionalCore(latent_aligner=self.aligner, hidden_dim=d_model).to(self.device)
