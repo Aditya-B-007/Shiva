@@ -77,16 +77,18 @@ class EpisodicMemory(IEpisodicMemory):
         samples = random.choices(list(self._bank), weights=weights, k=batch_size)
         return torch.stack([s["states"] for s in samples])
 
+
     def get_identity_context(self, current_latent: torch.Tensor) -> torch.Tensor:
-        """
-        Produce an identity-grounded context vector.
-
-          h_n = GRU(z.unsqueeze(1))[−1]          # final hidden state
-          identity_context = h_n + self_token     # ground in self
-
-        Returns a tensor of shape (D,) matching current_latent.
-        """
-        _, h_n = self.narrative_encoder(current_latent.unsqueeze(1))
-        # h_n: (num_layers=1, batch, latent_dim) → squeeze to (batch, latent_dim)
+        if current_latent.dim() == 1:
+            x = current_latent.unsqueeze(0).unsqueeze(1)
+            is_batched = False
+        else:
+            x = current_latent.unsqueeze(1)
+            is_batched = True
+        self.narrative_encoder.flatten_parameters()
+        _, h_n = self.narrative_encoder(x)
         identity_context = h_n[-1]
-        return identity_context + self.self_token.squeeze(0)
+        combined = identity_context + self.self_token.squeeze(0)
+        if not is_batched:
+            return combined.squeeze(0)
+        return combined

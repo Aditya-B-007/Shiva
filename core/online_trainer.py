@@ -13,15 +13,6 @@ import copy
 # ---------------------------------------------------------------------------
 
 class SumTree:
-    """
-    Binary segment tree for O(log n) priority updates and proportional sampling.
-
-    Internal layout:
-        tree[0]              — root (total priority sum)
-        tree[capacity-1 :]   — leaf nodes (one per experience slot)
-        data[i]              — experience at leaf position i
-    """
-
     def __init__(self, capacity: int) -> None:
         self.capacity = capacity
         self.tree = torch.zeros(2 * capacity - 1, dtype=torch.float32)
@@ -45,23 +36,14 @@ class SumTree:
         self.update(idx, p)
         self.write = (self.write + 1) % self.capacity
 
-    # --- HIGH-THROUGHPUT SWARM UPGRADE: Parallelized Batch Insertion ---
     def add_batch(self, priorities: List[float], data_items: List[Any]) -> None:
-        """
-        Ingests transition sequences from all active swarm nodes simultaneously.
-        Recomputes tree layer sums bottom-up to prevent sequential O(N log C) loops.
-        """
         assert len(priorities) == len(data_items), "Mismatched priority and item batch dimensions."
         
         for p, data in zip(priorities, data_items):
             leaf_idx = self.write + self.capacity - 1
             self.data[self.write] = data
-            
-            # Write to leaf node without triggering intermediate tree updates
             self.tree[leaf_idx] = p
             self.write = (self.write + 1) % self.capacity
-            
-        # Rebuild tree levels bottom-up in a single optimized pass
         current_level_start = self.capacity - 1
         nodes_at_level = self.capacity
         
@@ -117,7 +99,6 @@ class PrioritizedReplayBuffer(IReplayBuffer):
         self.tree.add(self.max_priority, sample)
 
     def add_swarm_batch(self, samples: List[Any]) -> None:
-        """Enables parallel batch storage interfaces for large swarm metrics collections."""
         priorities = [self.max_priority] * len(samples)
         self.tree.add_batch(priorities, samples)
 
@@ -153,16 +134,6 @@ class PrioritizedReplayBuffer(IReplayBuffer):
 # ---------------------------------------------------------------------------
 
 class ShivaTrainer:
-    """
-    Soft Actor-Critic training loop for the Shiva agent.
-
-    Responsibilities:
-      • Off-policy SAC critic and actor updates with IS-weighted PER.
-      • Target network soft-updates via Polyak averaging.
-      • Dream-cycle reconstruction loss optimization with anti-collapse swarm tracking.
-      • External weight ingestion boundaries management.
-    """
-
     def __init__(
         self,
         policy: ContinuousSACPolicy,
@@ -211,20 +182,13 @@ class ShivaTrainer:
     # ------------------------------------------------------------------
 
     def dream_cycle(self, batch_size: int = 32) -> Optional[float]:
-        """
-        Replay significant past states and apply a reconstruction loss.
-        """
         dream_states = self.policy.memory.get_dream_batch(batch_size)
         if dream_states is None:
             return None
 
         dream_states = dream_states.to(self.device)
         self.actor_optimizer.zero_grad()
-
-        # Valence signal from the final state in each dream sequence
         valence = self.emotions.get_valence(dream_states[:, -1, :])
-
-        # Forward pass on the final dream state
         outputs, _, _ = self.policy.get_action(dream_states[:, -1, :].unsqueeze(1))
         targets = dream_states[:, 1:, :]
 
@@ -260,10 +224,6 @@ class ShivaTrainer:
         return states, actions, rewards, next_states, dones
 
     def update_step(self, batch_size: int) -> Optional[Tuple[float, float]]:
-        """
-        One SAC update step: critic step → actor step → priority update → soft update.
-        Flyweight structure ensures parameter steps propagate globally across references.
-        """
         batch, idxs, is_weights = self.buffer.sample(batch_size)
         if any(s is None for s in batch):
             return None
@@ -271,14 +231,12 @@ class ShivaTrainer:
         states, actions, rewards, next_states, dones = self._process_batch(batch)
         is_weights = is_weights.to(self.device)
 
-        # --- Critic target ---
         with torch.no_grad():
             next_actions, next_log_probs, _ = self.target_policy.get_action(next_states)
             q1_t, q2_t = self.target_policy.evaluate_q(next_states, next_actions)
             min_q_t = torch.min(q1_t, q2_t) - self.alpha_entropy * next_log_probs
             target_q = rewards + (1 - dones) * self.gamma * min_q_t
 
-        # --- Critic update ---
         current_q1, current_q2 = self.policy.evaluate_q(states, actions)
         td1 = target_q - current_q1
         td2 = target_q - current_q2
@@ -290,22 +248,18 @@ class ShivaTrainer:
         critic_loss.backward()
         self.critic_optimizer.step()
 
-        # --- Actor update ---
         new_actions, log_probs, _ = self.policy.get_action(states)
         q1_new, q2_new = self.policy.evaluate_q(states, new_actions)
         actor_loss = (
             is_weights * (self.alpha_entropy * log_probs - torch.min(q1_new, q2_new))
         ).mean()
         
-        # Accumulate loss terms cleanly
         total_loss = actor_loss
-        
-        # --- FIXED ACCUMULATION BUG: Safely add anti-collapse swarm regularisation ---
+
         if hasattr(self.policy, "swarm") and self.policy.swarm is not None:
             div_loss = self.policy.swarm.get_diversity_loss()
             total_loss = total_loss + 0.05 * div_loss
 
-        # Integrate tracking restrictions from active parasitic distillation probes
         if self.probe is not None:
             p_loss = self.probe.compute_loss(states, self.policy.backbone)
             total_loss = total_loss + 0.1 * p_loss
@@ -314,15 +268,18 @@ class ShivaTrainer:
         total_loss.backward()
         self.actor_optimizer.step()
 
-        # Step updates on parasitic hooks
         if self.probe is not None and self.training_step % self.probe_frequency == 0:
             try:
                 self.probe.distil_step(states, self.policy.backbone)
             except RuntimeError:
                 pass
-
+        with torch.no_grad():
+            current_valence = self.emotions.get_valence(states)
+            valence_modulator = 1.0 + torch.abs(current_valence).cpu()
+            
         # --- Priority update ---
-        new_priorities = ((torch.abs(td1) + torch.abs(td2)) / 2).detach().cpu()
+        base_error = ((torch.abs(td1) + torch.abs(td2)) / 2).detach().cpu()
+        new_priorities=base_error * valence_modulator
         self.buffer.update_priorities(idxs, new_priorities)
 
         # --- Soft target update ---
@@ -332,9 +289,6 @@ class ShivaTrainer:
         return critic_loss.item(), actor_loss.item()
 
     def _soft_update(self) -> None:
-        """
-        Polyak averaging: θ̄ ← τθ + (1−τ)θ̄
-        """
         for param, target_param in zip(self.policy.parameters(), self.target_policy.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
 
