@@ -54,8 +54,15 @@ class TransformerEncoderBlock(nn.Module):
         self.attn_gate_net = GateHyperNetwork(d_model)
         self.ff_gate_net = GateHyperNetwork(d_model)
 
-        # --- Emotional modulation scalar ---
-        self.emotional_gate = nn.Parameter(torch.ones(1))
+        # --- Emotion-to-head routing ---
+        # A scalar bias added uniformly to all attention logits cancels in
+        # softmax (shift invariance). Instead, we learn a per-head projection
+        # from the scalar valence so each head gets its own bias, making the
+        # emotional signal non-uniform and therefore meaningful post-softmax.
+        # Zero-init ensures the model starts in a neutral emotional state.
+        self.emotion_head_router = nn.Linear(1, num_heads)
+        nn.init.zeros_(self.emotion_head_router.weight)
+        nn.init.zeros_(self.emotion_head_router.bias)
 
     # ------------------------------------------------------------------
     # Internal: multi-head attention
@@ -95,21 +102,24 @@ class TransformerEncoderBlock(nn.Module):
     def forward_pass(
         self, x: torch.Tensor, valence: torch.Tensor | None = None
     ) -> torch.Tensor:
+        B, T, _ = x.shape
         gate_attn, gate_ff = self._compute_gates(x)
         bias_shift: Union[float, torch.Tensor] = 0.0
         if valence is not None:
-            raw_bias = valence * self.emotional_gate
-            if isinstance(raw_bias, torch.Tensor):
-                if raw_bias.dim() == 0: # Pure scalar tensor
-                    bias_shift = raw_bias
-                else: 
-                    bias_shift = raw_bias.view(-1, 1, 1, 1)
-            else:
-                bias_shift = raw_bias
+            # Project scalar valence → per-head bias so different heads are
+            # shifted by different amounts. Shape: (B, num_heads, 1, 1)
+            # broadcasts over the (T_q, T_k) attention score matrix.
+            #
+            # Bug fix: the old code multiplied valence by a single scalar
+            # emotional_gate and added the result uniformly to all logits.
+            # Softmax is shift-invariant — a constant added to every logit
+            # produces identical attention weights, so the gate did nothing.
+            v = valence.reshape(B, 1) if valence.dim() >= 1 else valence.expand(B, 1)
+            head_bias = self.emotion_head_router(v)          # (B, num_heads)
+            bias_shift = head_bias.view(B, self.num_heads, 1, 1)  # broadcast T×T
         attn_out = self._multi_head_attention(x, bias_shift=bias_shift)
         x = self.norm1(x + gate_attn * attn_out)
         # Feed-forward network step
         ff_out = self.ff_net(x)
         x = self.norm2(x + gate_ff * ff_out)
-        
         return x

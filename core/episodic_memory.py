@@ -6,23 +6,6 @@ import torch.nn as nn
 from core.interfaces import IEpisodicMemory
 
 class EpisodicMemory(IEpisodicMemory):
-    """
-    Significance-weighted episodic replay memory.
-
-    Each episode is stored as a dictionary:
-        { 'states': Tensor[T, D],  'significance': float }
-
-    Significance is defined as:
-        σ = |mean(valence_sequence)| + empowerment_score
-
-    This prioritises emotionally salient or empowering experiences during
-    the dreaming phase, preserving the original mathematical intent.
-
-    The identity context is computed by passing the current latent through
-    a GRU and adding a learnable self-token:
-        h = GRU(z)[−1]
-        identity_context = h + self_token
-    """
 
     def __init__(
         self,
@@ -35,17 +18,8 @@ class EpisodicMemory(IEpisodicMemory):
         self.sequence_length = sequence_length
 
         self._bank: deque = deque(maxlen=capacity)
-
-        # Narrative encoder: single-layer GRU over the latent sequence.
-        self.narrative_encoder = nn.GRU(latent_dim, latent_dim, batch_first=True)
-
-        # Learnable self-token: distinguishes the agent's own representations
-        # from world representations during identity context construction.
+        self.narrative_encoder = nn.GRU(latent_dim, latent_dim, batch_first=True,num_layers=1)
         self.self_token = nn.Parameter(torch.randn(1, 1, latent_dim))
-
-    # ------------------------------------------------------------------
-    # IEpisodicMemory implementation
-    # ------------------------------------------------------------------
 
     def store_episode(
         self,
@@ -53,11 +27,6 @@ class EpisodicMemory(IEpisodicMemory):
         valence_sequence: torch.Tensor,
         empowerment_score: float,
     ) -> None:
-        """
-        Compute episode significance and append to the bounded memory bank.
-
-          σ = |E[valence]| + empowerment_score
-        """
         significance = torch.abs(valence_sequence.mean()) + empowerment_score
         self._bank.append(
             {
@@ -67,10 +36,6 @@ class EpisodicMemory(IEpisodicMemory):
         )
 
     def get_dream_batch(self, batch_size: int) -> torch.Tensor | None:
-        """
-        Sample a batch of episodes weighted by their significance scores.
-        Returns None if fewer than batch_size episodes have been stored.
-        """
         if len(self._bank) < batch_size:
             return None
         weights = [ep["significance"] for ep in self._bank]
@@ -85,10 +50,18 @@ class EpisodicMemory(IEpisodicMemory):
         else:
             x = current_latent.unsqueeze(1)
             is_batched = True
+        
+        # Expand self_token along the batch dimension to initialize the GRU hidden state (h_0)
+        B = x.size(0)
+        h_0 = self.self_token.expand(1, B, -1).contiguous()
+        
         self.narrative_encoder.flatten_parameters()
-        _, h_n = self.narrative_encoder(x)
+        _, h_n = self.narrative_encoder(x, h_0)
         identity_context = h_n[-1]
+        
+        # Add self_token to identity_context to preserve learnable self context identity
         combined = identity_context + self.self_token.squeeze(0)
+        
         if not is_batched:
             return combined.squeeze(0)
         return combined

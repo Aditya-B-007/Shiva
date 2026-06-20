@@ -6,17 +6,7 @@ import torch.nn.functional as F
 from torch import optim
 from core.interfaces import IAlignmentLoss
 
-# ---------------------------------------------------------------------------
-# Concrete loss strategies (OCP: open for extension via new implementations)
-# ---------------------------------------------------------------------------
-
 class InfoNCELoss(IAlignmentLoss):
-    """
-    Noise-Contrastive Estimation loss (SimCLR-style).
-
-      L = -1/2 * [CE(sim(z_a,z_b)/τ, I) + CE(sim(z_b,z_a)/τ, I)]
-    """
-
     def __init__(self, temperature: float = 0.07) -> None:
         self.temperature = temperature
 
@@ -32,11 +22,6 @@ class InfoNCELoss(IAlignmentLoss):
 
 
 class TriModalAlignmentLoss(IAlignmentLoss):
-    """
-    Three-way symmetric alignment loss used for (view_A, view_B, emotion).
-
-      L = (InfoNCE(z_a, z_b) + InfoNCE(z_a, z_e) + InfoNCE(z_b, z_e)) / 3
-    """
 
     def __init__(self, temperature: float = 0.07) -> None:
         self._pairwise = InfoNCELoss(temperature)
@@ -54,26 +39,7 @@ class TriModalAlignmentLoss(IAlignmentLoss):
             + self._pairwise.compute(z_b, z_emotion)
         ) / 3
 
-
-# ---------------------------------------------------------------------------
-# LatentAligner
-# ---------------------------------------------------------------------------
-
 class LatentAligner(nn.Module):
-    """
-    Projects modality-specific encoder outputs into a shared latent space via
-    an information-bottleneck and aligns them using a pluggable loss strategy.
-
-    Args:
-        encoders:          ModuleDict mapping modality name → encoder network.
-        d_model:           Shared latent dimensionality.
-        backbone:          Optional shared backbone for supervised train_step.
-                           Must expose a `forward_pass(x) → Tensor` method.
-        default_loss:      IAlignmentLoss used in train_step when no emotion
-                           IDs are supplied.
-        emotional_loss:    IAlignmentLoss used when emotion IDs are supplied.
-        lr:                AdamW learning rate.
-    """
 
     EMOTION_VOCAB: Dict[str, int] = {"Angry": 0, "Sad": 1, "Happy": 2, "Calm": 3}
 
@@ -106,9 +72,6 @@ class LatentAligner(nn.Module):
 
         self.optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=1e-2)
 
-    # ------------------------------------------------------------------
-    # Forward pass
-    # ------------------------------------------------------------------
 
     def forward(self, x: torch.Tensor, modality: str) -> torch.Tensor:
         if modality not in self.aligners:
@@ -116,9 +79,6 @@ class LatentAligner(nn.Module):
         z_raw = self.aligners[modality](x)
         return self.bottleneck(z_raw)
 
-    # ------------------------------------------------------------------
-    # Training step 
-    # ------------------------------------------------------------------
 
     def train_step(
         self,

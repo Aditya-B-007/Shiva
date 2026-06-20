@@ -8,10 +8,6 @@ from core.shiva_policy import ContinuousSACPolicy
 from parasite.ModelWeightParasiticExtraction import ParasiticExtractor
 import copy
 
-# ---------------------------------------------------------------------------
-# SumTree: Vectorized Binary Tree Structure
-# ---------------------------------------------------------------------------
-
 class SumTree:
     def __init__(self, capacity: int) -> None:
         self.capacity = capacity
@@ -75,10 +71,8 @@ class SumTree:
         return leaf_idx, self.tree[leaf_idx].item(), self.data[leaf_idx - self.capacity + 1]
 
 
-# ---------------------------------------------------------------------------
-# Prioritised Replay Buffer
-# ---------------------------------------------------------------------------
 
+    
 class PrioritizedReplayBuffer(IReplayBuffer):
 
 
@@ -118,6 +112,7 @@ class PrioritizedReplayBuffer(IReplayBuffer):
 
         p_tensor = torch.tensor(priorities, dtype=torch.float32)
         sampling_probs = p_tensor / total
+        sampling_probs=torch.clamp(sampling_probs,min=1e-8)
         is_weights = torch.pow(self.tree.capacity * sampling_probs, -self.beta)
         is_weights /= is_weights.max()
         return batch, idxs, is_weights
@@ -129,10 +124,7 @@ class PrioritizedReplayBuffer(IReplayBuffer):
             self.max_priority = max(self.max_priority, p)
 
 
-# ---------------------------------------------------------------------------
-# Shiva Trainer Optimization Engine
-# ---------------------------------------------------------------------------
-
+            
 class ShivaTrainer:
     def __init__(
         self,
@@ -177,9 +169,6 @@ class ShivaTrainer:
             self.policy.critic.parameters(), lr=3e-4
         )
 
-    # ------------------------------------------------------------------
-    # Dream cycle
-    # ------------------------------------------------------------------
 
     def dream_cycle(self, batch_size: int = 32) -> Optional[float]:
         dream_states = self.policy.memory.get_dream_batch(batch_size)
@@ -208,10 +197,6 @@ class ShivaTrainer:
         dream_loss.backward()
         self.actor_optimizer.step()
         return dream_loss.item()
-
-    # ------------------------------------------------------------------
-    # SAC update step
-    # ------------------------------------------------------------------
 
     def _process_batch(
         self, batch: List[Any]
@@ -291,10 +276,6 @@ class ShivaTrainer:
     def _soft_update(self) -> None:
         for param, target_param in zip(self.policy.parameters(), self.target_policy.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
-
-    # ------------------------------------------------------------------
-    # Locomotion / Migration Methods
-    # ------------------------------------------------------------------
 
     def migrate_agent(self, destination: str, node_id: str = "shiva"):
         if self.locomotion is None:

@@ -3,55 +3,41 @@ from typing import Any, Dict
 import torch
 import torch.linalg as linalg
 import torch.nn as nn
+import torch.nn.functional as F
 from core.interfaces import IWeightMergeStrategy
 
 class SVDDimensionFitter:
-    """
-    Resizes a 2-D weight matrix to a target shape using truncated SVD.
-
-    The original matrix W is factorised as W = U Σ Vᴴ.  The leading
-    singular components are retained up to the target dimensions, and
-    zero-padding fills any remaining entries.
-    """
 
     @staticmethod
     def fit(W: torch.Tensor, target_shape: torch.Size) -> torch.Tensor:
-        """
-        Fit weight matrix W into target_shape via truncated SVD.
-
-          W_fit = U[:r₀, :r₁] · diag(S[:min(r₀,r₁)]) · Vᴴ[:min(r₀,r₁), :r₁]
-
-        where r₀, r₁ = target_shape.
-        """
         if W.shape == target_shape:
             return W
 
+        # Handle non-2D tensors (e.g. 1D biases or layernorm weights) to prevent crash
+        if W.dim() != 2:
+            result = torch.zeros(target_shape, dtype=W.dtype, device=W.device)
+            slices = tuple(slice(0, min(s_s, t_s)) for s_s, t_s in zip(W.shape, target_shape))
+            result[slices] = W[slices]
+            return result
+
         U, S, Vh = linalg.svd(W, full_matrices=False)
+        V = Vh.transpose(-2, -1)
 
+        h0, h1 = W.shape
         r0, r1 = target_shape
-        k = min(len(S), r0, r1)
 
-        U_t = U[:r0, :k]
-        S_t = torch.diag(S[:k])
-        Vh_t = Vh[:k, :r1]
+        k0 = min(h0, r0, U.shape[1])
+        P_L = torch.zeros((h0, r0), dtype=W.dtype, device=W.device)
+        P_L[:, :k0] = U[:, :k0]
 
-        result = torch.zeros(target_shape, dtype=W.dtype, device=W.device)
-        fitted = U_t @ S_t @ Vh_t
-        result[: fitted.shape[0], : fitted.shape[1]] = fitted
-        return result
+        k1 = min(h1, r1, V.shape[1])
+        P_R = torch.zeros((h1, r1), dtype=W.dtype, device=W.device)
+        P_R[:, :k1] = V[:, :k1]
+        W_projected = P_L.transpose(-2, -1) @ W @ P_R
+        return W_projected
 
 
 class AttentionHeadAverager:
-    """
-    Compresses multi-head attention weight matrices by averaging head buckets.
-
-    When the source model has more attention heads than the target, groups of
-    consecutive source heads are averaged to produce target heads.
-
-      W_compressed[i] = mean(W_src[i·k : (i+1)·k])
-
-    where k = src_heads // target_heads.
-    """
 
     @staticmethod
     def average(
@@ -59,30 +45,21 @@ class AttentionHeadAverager:
         src_heads: int,
         target_heads: int,
     ) -> torch.Tensor:
-        d_model = W_mha.shape[0]
-        d_head = d_model // src_heads
-        k = src_heads // target_heads
-
-        reshaped = W_mha.view(src_heads, d_head, d_model)
-        averaged = torch.stack(
-            [reshaped[i * k : (i + 1) * k].mean(dim=0) for i in range(target_heads)]
+        src_out_dim, d_model = W_mha.shape
+        d_head_src = src_out_dim // src_heads
+        d_head_target = src_out_dim // target_heads
+        x = W_mha.view(1, src_heads, d_head_src, d_model)
+        x_interpolated = F.interpolate(
+            x,
+            size=(target_heads, d_head_target),
+            mode="bilinear",
+            align_corners=False
         )
-        return averaged.view(-1, d_model)
+        out = x_interpolated.view(target_heads * d_head_target, d_model)
+        return out
 
-
-# ---------------------------------------------------------------------------
-# Concrete strategies
-# ---------------------------------------------------------------------------
 
 class RapidFrankenmergeStrategy(IWeightMergeStrategy):
-    """
-    Rapid architecture-agnostic weight ingestion via:
-      • Attention head compression  (bucket-averaging)
-      • Dimensional fitting         (truncated SVD + zero-padding)
-
-    This strategy attempts a best-effort parameter transfer when source and
-    target architectures differ in depth, width, or head count.
-    """
 
     def __init__(self) -> None:
         self._fitter = SVDDimensionFitter()
@@ -94,12 +71,6 @@ class RapidFrankenmergeStrategy(IWeightMergeStrategy):
         ext_state_dict: Dict[str, torch.Tensor],
         ext_config: Dict[str, Any],
     ) -> Dict[str, torch.Tensor]:
-        """
-        Returns a new state-dict compatible with target_model's architecture.
-
-        Attention weights (keys containing 'attn' or 'attention') are
-        head-averaged; all other parameters are SVD-fitted.
-        """
         target_dict = target_model.state_dict()
 
         if hasattr(target_model, "config"):
@@ -109,17 +80,22 @@ class RapidFrankenmergeStrategy(IWeightMergeStrategy):
 
         new_state: Dict[str, torch.Tensor] = {}
 
+        src_heads: int = ext_config["num_heads"]
+
         for name, param in ext_state_dict.items():
-            if "attn" in name or "attention" in name:
+            target_shape = (
+                target_dict[name].shape
+                if name in target_dict
+                else param.shape
+            )
+            is_attention_proj = ("atta" in name or "attention" in name) and param.dim() == 2
+            heads_differ = src_heads != target_heads
+
+            if is_attention_proj and heads_differ:
                 new_state[name] = self._head_averager.average(
-                    param, ext_config["num_heads"], target_heads
+                    param, src_heads, target_heads
                 )
             else:
-                target_shape = (
-                    target_dict[name].shape
-                    if name in target_dict
-                    else param.shape
-                )
                 new_state[name] = self._fitter.fit(param, target_shape)
 
         return new_state
