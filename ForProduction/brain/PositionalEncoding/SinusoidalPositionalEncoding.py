@@ -1,4 +1,5 @@
 import torch
+from  PositionalEncodingInterface import PositionalEncoding
 class SinusoidalPositionalEncoding(PositionalEncoding):
 
     def __init__(self, config):

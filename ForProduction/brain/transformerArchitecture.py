@@ -13,16 +13,21 @@ load_dotenv()
 
 @dataclass
 class TransformerConfig:
+    vocab_size: int = int(os.getenv("VOCAB_SIZE", 32000))
+    max_sequence_length: int = int(os.getenv("MAX_SEQUENCE_LENGTH", 2048))
+    vector_size: int = int(os.getenv("VECTOR_SIZE", 2048))
+    num_heads: int = int(os.getenv("NUM_HEADS", 8))
+    num_layers: int = int(os.getenv("NUM_LAYERS", 18))
+    feed_forward_dimension: int = int(os.getenv("FFN_DIM", 8192))
+    dropout: float = float(os.getenv("DROPOUT", 0.1))
+    device: str = os.getenv("DEVICE", "cpu")
+    dtype: str = os.getenv("DTYPE", "float16")
+    positional_encoding_type: str = os.getenv("POSITIONAL_ENCODING_TYPE", "rope") 
+    rope_theta: float = float(os.getenv("ROPE_THETA", 10000.0))
 
-    vocab_size= os.getenv("VOCAB_SIZE",32000)
-    max_sequence_length= os.getenv("MAX_SEQUENCE_LENGTH",2048)
-    vector_size=os.getenv("VECTOR_SIZE",2048)
-    num_heads=os.getenv("NUM_HEADS",8)
-    num_layers=os.getenv("NUM_LAYERS",18)
-    feed_forward_dimension=os.getenv("FFN_DIM",8192)
-    dropout=os.getenv("DROPOUT",0.1)
-    device=os.getenv("DEVICE", "cpu")
-    dtype=os.getenv("DTYPE", "float16")
+    @classmethod
+    def from_env(cls):
+        return cls()
 
 
 ###########################################################################
@@ -57,9 +62,24 @@ class TokenEmbedding(nn.Module):
 
 
 ###########################################################################
-# POSITIONAL ENCODING
+# POSITIONAL ENCODING ROUTER
 ###########################################################################
-
+class PositionalEncodingRouter:
+    @staticmethod
+    def create(config) -> nn.Module:
+        pe_type = config.positional_encoding_type.lower()
+        
+        if pe_type == "sinusoidal":
+            from brain.PositionalEncoding.SinusoidalPositionalEncoding import SinusoidalPositionalEncoding
+            return SinusoidalPositionalEncoding(config)
+        elif pe_type == "rope":
+            from brain.PositionalEncoding.RoPEPositionalEncoding import RotaryPositionalEncoding
+            return RotaryPositionalEncoding(config)
+        elif pe_type == "alibi":
+            from brain.PositionalEncoding.AliBiPositionalEncoding import ALiBiPositionalEncoding
+            return ALiBiPositionalEncoding(config)
+        else:
+            raise ValueError(f"Unknown positional encoding type: {pe_type}")
 
 
 ###########################################################################
@@ -106,32 +126,15 @@ class FeedForward(nn.Module):
 
         super().__init__()
 
-        self.linear1 = nn.Linear(
-
-            config.vector_size,
-
-            config.feed_forward_dimension
-
-        )
-
+        self.linear1 = nn.Linear(config.vector_size,config.feed_forward_dimension)
         self.activation = nn.GELU()
-
-        self.linear2 = nn.Linear(
-
-            config.feed_forward_dimension,
-
-            config.vector_size
-
-        )
+        self.linear2 = nn.Linear(config.feed_forward_dimension,config.vector_size)
 
     def forward(self, x):
 
         x = self.linear1(x)
-
         x = self.activation(x)
-
         x = self.linear2(x)
-
         return x
 
 
@@ -141,89 +144,42 @@ class FeedForward(nn.Module):
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, config):
-
+    def __init__(self, config, position_encoding: nn.Module = None):
         super().__init__()
-
         self.vector_size = config.vector_size
-
         self.num_heads = config.num_heads
+        self.head_dimension = self.vector_size // self.num_heads
+        self.position_encoding = position_encoding
 
-        self.head_dimension = (
+        self.query_projection = nn.Linear(self.vector_size, self.vector_size)
+        self.key_projection = nn.Linear(self.vector_size, self.vector_size)
+        self.value_projection = nn.Linear(self.vector_size, self.vector_size)
+        self.output_projection = nn.Linear(self.vector_size, self.vector_size)
 
-            self.vector_size //
+    def forward(self, query, key, value, attention_mask=None):
+        batch_size, seq_len, _ = query.shape
+        q = self.query_projection(query).view(batch_size, seq_len, self.num_heads, self.head_dimension).transpose(1, 2)
+        k = self.key_projection(key).view(batch_size, -1, self.num_heads, self.head_dimension).transpose(1, 2)
+        v = self.value_projection(value).view(batch_size, -1, self.num_heads, self.head_dimension).transpose(1, 2)
 
-            self.num_heads
+        if self.position_encoding and self.position_encoding.__class__.__name__ == "RotaryPositionalEncoding":
+            q = self.position_encoding(q)
+            k = self.position_encoding(k)
 
-        )
+        scale = self.head_dimension ** 0.5
+        attention_scores = torch.matmul(q, k.transpose(-2, -1)) / scale
 
-        self.query_projection = nn.Linear(
-
-            self.vector_size,
-
-            self.vector_size
-
-        )
-
-        self.key_projection = nn.Linear(
-
-            self.vector_size,
-
-            self.vector_size
-
-        )
-
-        self.value_projection = nn.Linear(
-
-            self.vector_size,
-
-            self.vector_size
-
-        )
-
-        self.output_projection = nn.Linear(
-
-            self.vector_size,
-
-            self.vector_size
-
-        )
-
-    def forward(
-
-            self,
-
-            query,
-
-            key,
-
-            value,
-
-            attention_mask=None
-
-    ):
-
-        #
-        # TODO
-        #
-        # Q projection
-        # K projection
-        # V projection
-        #
-        # Split heads
-        #
-        # Scaled Dot Product
-        #
-        # Softmax
-        #
-        # Weighted Sum
-        #
-        # Merge Heads
-        #
-        # Output Projection
-        #
-
-        return query
+        if self.position_encoding and self.position_encoding.__class__.__name__ == "ALiBiPositionalEncoding":
+            attention_scores = self.position_encoding(attention_scores)
+            
+        if attention_mask is not None:
+            attention_scores = attention_scores.masked_fill(attention_mask == 0, float("-inf"))
+            
+        attention_probs = torch.softmax(attention_scores, dim=-1)
+        context = torch.matmul(attention_probs, v) 
+        context = context.transpose(1, 2).contiguous().view(batch_size, seq_len, self.vector_size)
+        
+        return self.output_projection(context)
 
 
 ###########################################################################
@@ -232,48 +188,23 @@ class MultiHeadAttention(nn.Module):
 
 class TransformerBlock(nn.Module):
 
-    def __init__(self, config):
-
+    def __init__(self, config, position_encoding: nn.Module = None):
         super().__init__()
-
-        self.self_attention = MultiHeadAttention(config)
-
+        self.self_attention = MultiHeadAttention(config, position_encoding)
         self.dropout1 = Dropout(config)
-
         self.norm1 = LayerNormalization(config)
-
         self.feed_forward = FeedForward(config)
-
         self.dropout2 = Dropout(config)
-
         self.norm2 = LayerNormalization(config)
 
     def forward(self, x, mask=None):
-
-        attention = self.self_attention(
-
-            x,
-
-            x,
-
-            x,
-
-            mask
-
-        )
-
+        attention = self.self_attention(x, x, x, mask)
         x = x + self.dropout1(attention)
-
         x = self.norm1(x)
-
         ff = self.feed_forward(x)
-
         x = x + self.dropout2(ff)
-
         x = self.norm2(x)
-
         return x
-
 
 ###########################################################################
 # ENCODER
@@ -281,71 +212,71 @@ class TransformerBlock(nn.Module):
 
 class Encoder(nn.Module):
 
-    def __init__(self, config):
-
+    def __init__(self, config, position_encoding: nn.Module = None):
         super().__init__()
-
         self.layers = nn.ModuleList([
-
-            TransformerBlock(config)
-
+            TransformerBlock(config, position_encoding)
             for _ in range(config.num_layers)
-
         ])
 
     def forward(self, x, mask=None):
-
         for layer in self.layers:
-
             x = layer(x, mask)
-
         return x
-
 
 ###########################################################################
 # DECODER
 ###########################################################################
+class DecoderBlock(nn.Module):
+
+    def __init__(self, config, position_encoding: nn.Module = None):
+        super().__init__()
+        # Causal attention handles the generation stream
+        self.causal_attention = MultiHeadAttention(config, position_encoding)
+        self.dropout1 = Dropout(config)
+        self.norm1 = LayerNormalization(config)
+
+        # Cross attention interacts with encoder representations
+        self.cross_attention = MultiHeadAttention(config, position_encoding=None) # Positional embeddings are handled by encoder/causal steps
+        self.dropout2 = Dropout(config)
+        self.norm2 = LayerNormalization(config)
+
+        self.feed_forward = FeedForward(config)
+        self.dropout3 = Dropout(config)
+        self.norm3 = LayerNormalization(config)
+
+    def forward(self, x, encoder_output, source_mask=None, target_mask=None):
+        # Phase 1: Masked Causal Self-Attention
+        attn_target = self.causal_attention(x, x, x, target_mask)
+        x = x + self.dropout1(attn_target)
+        x = self.norm1(x)
+
+        # Phase 2: Cross-Attention (Query from Decoder, Key & Value from Encoder)
+        attn_cross = self.cross_attention(query=x, key=encoder_output, value=encoder_output, attention_mask=source_mask)
+        x = x + self.dropout2(attn_cross)
+        x = self.norm2(x)
+
+        # Phase 3: Feed-Forward Network
+        ff_out = self.feed_forward(x)
+        x = x + self.dropout3(ff_out)
+        x = self.norm3(x)
+        
+        return x
+
 
 class Decoder(nn.Module):
 
-    def __init__(self, config):
-
+    def __init__(self, config, position_encoding: nn.Module = None):
         super().__init__()
-
         self.layers = nn.ModuleList([
-
-            TransformerBlock(config)
-
+            DecoderBlock(config, position_encoding)
             for _ in range(config.num_layers)
-
         ])
 
-    def forward(
-
-            self,
-
-            x,
-
-            encoder_output,
-
-            source_mask=None,
-
-            target_mask=None
-
-    ):
-
-        #
-        # TODO
-        #
-        # Masked Self Attention
-        #
-        # Cross Attention
-        #
-        # Feed Forward
-        #
-
+    def forward(self, x, encoder_output, source_mask=None, target_mask=None):
+        for layer in self.layers:
+            x = layer(x, encoder_output, source_mask, target_mask)
         return x
-
 
 ###########################################################################
 # TRANSFORMER
@@ -354,120 +285,29 @@ class Decoder(nn.Module):
 class Transformer(nn.Module):
 
     def __init__(self, config):
-
         super().__init__()
-
         self.token_embedding = TokenEmbedding(config)
-
-        self.position_encoding = PositionalEncoding(config)
-
+        self.position_encoding = PositionalEncodingRouter.create(config)
         self.dropout = Dropout(config)
+        self.encoder = Encoder(config, self.position_encoding)
+        self.decoder = Decoder(config, self.position_encoding)
 
-        self.encoder = Encoder(config)
-
-        self.decoder = Decoder(config)
-
-    def encode(
-
-            self,
-
-            source,
-
-            source_mask=None
-
-    ):
-
+    def encode(self, source, source_mask=None):
         x = self.token_embedding(source)
-
-        x = self.position_encoding(x)
-
+        if self.position_encoding.__class__.__name__ == "SinusoidalPositionalEncoding":
+            x = self.position_encoding(x)
         x = self.dropout(x)
+        return self.encoder(x, source_mask)
 
-        return self.encoder(
-
-            x,
-
-            source_mask
-
-        )
-
-    def decode(
-
-            self,
-
-            target,
-
-            encoder_output,
-
-            source_mask=None,
-
-            target_mask=None
-
-    ):
-
+    def decode(self, target, encoder_output, source_mask=None, target_mask=None):
         x = self.token_embedding(target)
-
-        x = self.position_encoding(x)
+        if self.position_encoding.__class__.__name__ == "SinusoidalPositionalEncoding":
+            x = self.position_encoding(x)
 
         x = self.dropout(x)
+        return self.decoder(x, encoder_output, source_mask, target_mask)
 
-        return self.decoder(
-
-            x,
-
-            encoder_output,
-
-            source_mask,
-
-            target_mask
-
-        )
-
-    def forward(
-
-            self,
-
-            source,
-
-            target,
-
-            source_mask=None,
-
-            target_mask=None
-
-    ):
-
-        encoder_output = self.encode(
-
-            source,
-
-            source_mask
-
-        )
-
-        decoder_output = self.decode(
-
-            target,
-
-            encoder_output,
-
-            source_mask,
-
-            target_mask
-
-        )
-
+    def forward(self, source, target, source_mask=None, target_mask=None):
+        encoder_output = self.encode(source, source_mask)
+        decoder_output = self.decode(target, encoder_output, source_mask, target_mask)
         return decoder_output
-
-
-###########################################################################
-# ENTRY POINT
-###########################################################################
-
-if __name__ == "__main__":
-
-    config = TransformerConfig.from_env()
-
-    model = Transformer(config)
-
-    print(model)
