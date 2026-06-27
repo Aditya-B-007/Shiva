@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from dotenv import load_dotenv
-
+from .PositionalEncoding import PositionalEncodingInterface
 load_dotenv()
 
 
@@ -28,47 +28,38 @@ class TransformerConfig:
 ###########################################################################
 # EMBEDDING
 ###########################################################################
-
 class TokenEmbedding(nn.Module):
 
     def __init__(self, config):
-
         super().__init__()
-
+        self.vocab_size = config.vocab_size
+        self.vector_size = config.vector_size
         self.embedding = nn.Embedding(
-            config.vocab_size,
-            config.vector_size
+            num_embeddings=self.vocab_size,
+            embedding_dim=self.vector_size,
+            padding_idx=0
         )
+        nn.init.xavier_uniform_(self.embedding.weight)
 
-    def forward(self, tokens):
-
-        return self.embedding(tokens)
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        #Swaps the integer id of every word with the vector, no neural network involved.
+        if tokens.dtype != torch.long:
+            raise TypeError(
+                "Input tokens must be of dtype torch.long."
+            )
+        if tokens.dim() != 2:
+            raise ValueError(
+                "Input tensor must have shape "
+                "(batch_size, sequence_length)."
+            )
+        embeddings = self.embedding(tokens)
+        return embeddings # This might blow up
 
 
 ###########################################################################
 # POSITIONAL ENCODING
 ###########################################################################
 
-class PositionalEncoding(nn.Module):
-
-    def __init__(self, config):
-
-        super().__init__()
-
-        self.max_sequence_length = config.max_sequence_length
-
-        self.vector_size = config.vector_size
-
-    def forward(self, x):
-
-        #
-        # TODO
-        #
-        # Sinusoidal
-        # Rotary
-        # ALiBi
-        #
-        return x
 
 
 ###########################################################################
