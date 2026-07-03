@@ -4,15 +4,15 @@ import torch
 import torch.nn as nn
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+import psutil
 
+# Setup robust imports to handle relative and absolute imports in python paths
 try:
     from emotionInterface import IAppraisal, IFeatureEmbedding
     from emotionalContract import (
         EventType,
         FeatureBundle,
         NumericalFeatureVector,
-        FeatureTokenSequence,
-        CognitiveLatent,
         AppraisalDTO
     )
 except ImportError:
@@ -22,8 +22,6 @@ except ImportError:
             EventType,
             FeatureBundle,
             NumericalFeatureVector,
-            FeatureTokenSequence,
-            CognitiveLatent,
             AppraisalDTO
         )
     except ImportError:
@@ -32,10 +30,17 @@ except ImportError:
             EventType,
             FeatureBundle,
             NumericalFeatureVector,
-            FeatureTokenSequence,
-            CognitiveLatent,
             AppraisalDTO
         )
+
+# Import simplified generic DTOs from transferDTO
+try:
+    from transferDTO import Tokens, TokenBundle, Latent
+except ImportError:
+    try:
+        from ...transferDTO import Tokens, TokenBundle, Latent
+    except ImportError:
+        from src.transferDTO import Tokens, TokenBundle, Latent
 
 try:
     from transformerArchitecture import TransformerConfig, Encoder
@@ -50,21 +55,26 @@ except ImportError:
 # SCHEMA DEFINITIONS AND CONFIGURATION KEYS
 # ==============================================================================
 
-NUMERICAL_FEATURE_KEYS = [
+NUMBERS = [
+    # Perception
     "perception_confidence",
+    # Environment
     "env_battery_percentage",
     "env_cpu_utilization",
     "env_gpu_utilization",
     "env_available_memory",
+    # Emotion
     "joy", "sadness", "fear", "anger", "surprise", "disgust", "trust", 
     "anticipation", "curiosity", "emotion_confidence", "frustration", 
     "motivation", "uncertainty", "emotional_intensity",
+    # Homeostasis
     "fatigue", "stress", "cognitive_load", "focus", "curiosity_drive", 
     "novelty_hunger", "reward_satisfaction", "social_need", "stability_score",
+    # Memory
     "memory_retrieval_confidence",
 ]
 
-CATEGORICAL_FEATURE_KEYS = [
+CATEGORIES = [
     "event_type",
     "event_source",
     "env_charging",
@@ -75,9 +85,9 @@ CATEGORICAL_FEATURE_KEYS = [
 
 # Fetch EventType names for vocabulary building
 try:
-    EVENT_TYPES = [t.name for t in EventType]
+    EVENTS = [t.name for t in EventType]
 except Exception:
-    EVENT_TYPES = [
+    EVENTS = [
         "PERCEPTION", "USER_INTERACTION", "SYSTEM_INTERACTION", "SENSOR_UPDATE",
         "ENVIRONMENT_UPDATE", "MEMORY_RETRIEVAL", "MEMORY_STORAGE", "MEMORY_FORGET",
         "GOAL_CREATED", "GOAL_COMPLETED", "GOAL_FAILED", "GOAL_CANCELLED",
@@ -86,8 +96,8 @@ except Exception:
         "STARTUP", "SHUTDOWN", "SLEEP", "WAKE"
     ]
 
-DEFAULT_VOCABS = {
-    "event_type": ["UNK"] + EVENT_TYPES,
+VOCABS = {
+    "event_type": ["UNK"] + EVENTS,
     "event_source": ["UNK", "user", "system", "perception", "sensor", "environment", "memory", "goal", "action", "tool", "emotion", "homeostasis", "identity"],
     "env_charging": ["UNK", "True", "False", "None"],
     "env_internet_available": ["UNK", "True", "False", "None"],
@@ -101,19 +111,12 @@ DEFAULT_VOCABS = {
 # ==============================================================================
 
 class FeatureExtractor:
-
-    def extract(self, bundle: FeatureBundle) -> NumericalFeatureVector:
-        """
-        Public method to extract structured feature vectors from a FeatureBundle.
-        """
-        dtos = self._read_dtos(bundle)
-        numerical = self._extract_numerical(dtos)
-        categorical = self._extract_categorical(dtos)
-        embeddings = self._extract_embeddings(dtos)
-        return self._produce_vector(numerical, categorical, embeddings)
+    """
+    FeatureExtractor extracts numerical values, categorical values, and pre-existing
+    embeddings from a FeatureBundle.
+    """
 
     def _read_dtos(self, bundle: FeatureBundle) -> Dict[str, Any]:
-        """Reads every active DTO from the FeatureBundle."""
         return {
             "event": bundle.event,
             "perception": bundle.perception,
@@ -125,14 +128,21 @@ class FeatureExtractor:
         }
 
     def _extract_numerical(self, dtos: Dict[str, Any]) -> Dict[str, float]:
+        """Extracts numerical values from the respective DTOs."""
         numerical = {}
+        
+        # Perception
         p = dtos.get("perception")
         numerical["perception_confidence"] = float(p.confidence) if p and p.confidence is not None else 1.0
+        
+        # Environment
         env = dtos.get("environment")
         numerical["env_battery_percentage"] = float(env.battery_percentage) if env and env.battery_percentage is not None else 100.0
         numerical["env_cpu_utilization"] = float(env.cpu_utilization) if env and env.cpu_utilization is not None else 0.0
         numerical["env_gpu_utilization"] = float(env.gpu_utilization) if env and env.gpu_utilization is not None else 0.0
         numerical["env_available_memory"] = float(env.available_memory) if env and env.available_memory is not None else 0.0
+        
+        # Emotion
         emo = dtos.get("emotion")
         numerical["joy"] = float(emo.joy) if emo and emo.joy is not None else 0.0
         numerical["sadness"] = float(emo.sadness) if emo and emo.sadness is not None else 0.0
@@ -149,6 +159,7 @@ class FeatureExtractor:
         numerical["uncertainty"] = float(emo.uncertainty) if emo and emo.uncertainty is not None else 0.0
         numerical["emotional_intensity"] = float(emo.emotional_intensity) if emo and emo.emotional_intensity is not None else 0.0
         
+        # Homeostasis
         h = dtos.get("homeostasis")
         numerical["fatigue"] = float(h.fatigue) if h and h.fatigue is not None else 0.0
         numerical["stress"] = float(h.stress) if h and h.stress is not None else 0.0
@@ -159,6 +170,8 @@ class FeatureExtractor:
         numerical["reward_satisfaction"] = float(h.reward_satisfaction) if h and h.reward_satisfaction is not None else 0.5
         numerical["social_need"] = float(h.social_need) if h and h.social_need is not None else 0.5
         numerical["stability_score"] = float(h.stability_score) if h and h.stability_score is not None else 1.0
+        
+        # Memory
         m = dtos.get("memory")
         numerical["memory_retrieval_confidence"] = float(m.retrieval_confidence) if m and m.retrieval_confidence is not None else 1.0
         
@@ -211,18 +224,32 @@ class FeatureExtractor:
             embeddings=embeddings
         )
 
+    def extract(self, bundle: FeatureBundle) -> NumericalFeatureVector:
+        """
+        Public method to extract structured feature vectors from a FeatureBundle.
+        """
+        dtos = self._read_dtos(bundle)
+        numerical = self._extract_numerical(dtos)
+        categorical = self._extract_categorical(dtos)
+        embeddings = self._extract_embeddings(dtos)
+        return self._produce_vector(numerical, categorical, embeddings)
+    
 
 # ==============================================================================
 # 2. FT-TRANSFORMER FEATURE EMBEDDING (OPEN SOURCE MODULAR STYLE)
 # ==============================================================================
 
 class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
+    """
+    FT-Transformer Embedding layer that projects numerical features,
+    embeds categorical features, projects existing embeddings, and builds TokenBundles.
+    """
 
     def __init__(
         self,
         vector_size: int = 64,
-        numerical_keys: List[str] = NUMERICAL_FEATURE_KEYS,
-        categorical_keys: List[str] = CATEGORICAL_FEATURE_KEYS,
+        numerical_keys: List[str] = NUMBERS,
+        categorical_keys: List[str] = CATEGORIES,
         categorical_vocabs: Optional[Dict[str, List[str]]] = None,
         text_emb_dim: int = 1536,
         vision_emb_dim: int = 512,
@@ -234,7 +261,7 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
         self.categorical_keys = categorical_keys
         
         # Setup vocabulary maps
-        vocabs = categorical_vocabs or DEFAULT_VOCABS
+        vocabs = categorical_vocabs or VOCABS
         self.vocab_maps = {
             key: {val: idx for idx, val in enumerate(vocab)}
             for key, vocab in vocabs.items()
@@ -256,28 +283,6 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
         self.text_proj = nn.Linear(text_emb_dim, vector_size)
         self.vision_proj = nn.Linear(vision_emb_dim, vector_size)
         self.audio_proj = nn.Linear(audio_emb_dim, vector_size)
-
-    def embed(self, feature_vector: NumericalFeatureVector) -> FeatureTokenSequence:
-        """
-        Public method to learn and project embeddings for all numerical,
-        categorical, and pre-existing feature vector inputs.
-        """
-        num_tokens = self._project_numerical(feature_vector.numerical_features)
-        cat_tokens = self._handle_categorical(feature_vector.categorical_features)
-        
-        batch_size = num_tokens.size(0)
-        device = num_tokens.device
-        
-        emb_tokens = self._project_embeddings(feature_vector.embeddings, batch_size, device)
-        tokens = self._learn_embeddings(num_tokens, cat_tokens, emb_tokens)
-        
-        # Track active embedding names to build feature names sequence list
-        active_embedding_names = [
-            name for name, val in feature_vector.embeddings.items() if val is not None
-        ]
-        feature_names = self.numerical_keys + self.categorical_keys + active_embedding_names
-        
-        return FeatureTokenSequence(tokens=tokens, feature_names=feature_names)
 
     def _project_numerical(self, numerical_features: Dict[str, Any]) -> torch.Tensor:
         """Projects numerical features into dense vector space."""
@@ -399,10 +404,42 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
         self,
         num_tokens: torch.Tensor,
         cat_tokens: torch.Tensor,
-        emb_tokens: torch.Tensor
-    ) -> torch.Tensor:
-        """Combines projected and looked-up tokens into one unified tensor sequence."""
-        return torch.cat([num_tokens, cat_tokens, emb_tokens], dim=1)
+        emb_tokens: torch.Tensor,
+        feature_vector: NumericalFeatureVector
+    ) -> TokenBundle:
+        """Wraps projected and looked-up tokens into structured Tokens groups in a TokenBundle."""
+        # Find active external embedding names
+        active_embedding_names = [
+            name for name, val in feature_vector.embeddings.items() if val is not None
+        ]
+        
+        # Build individual Token groups
+        num_group = Tokens(values=num_tokens, names=self.numerical_keys)
+        cat_group = Tokens(values=cat_tokens, names=self.categorical_keys)
+        emb_group = Tokens(values=emb_tokens, names=active_embedding_names)
+        
+        return TokenBundle(
+            groups={
+                "numerical": num_group,
+                "categorical": cat_group,
+                "external": emb_group
+            }
+        )
+
+     def embed(self, feature_vector: NumericalFeatureVector) -> TokenBundle:
+        """
+        Public method to learn and project embeddings for all numerical,
+        categorical, and pre-existing feature vector inputs.
+        """
+        num_tokens = self._project_numerical(feature_vector.numerical_features)
+        cat_tokens = self._handle_categorical(feature_vector.categorical_features)
+        
+        batch_size = num_tokens.size(0)
+        device = num_tokens.device
+        
+        emb_tokens = self._project_embeddings(feature_vector.embeddings, batch_size, device)
+        
+        return self._learn_embeddings(num_tokens, cat_tokens, emb_tokens, feature_vector)
 
 
 # ==============================================================================
@@ -410,6 +447,10 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
 # ==============================================================================
 
 class CognitiveStateEncoder(nn.Module):
+    """
+    CognitiveStateEncoder utilizes the Shiva Transformer Encoder to learn relationships
+    between the different features and pools them using a [CLS] token representation.
+    """
 
     def __init__(self, config: Optional[TransformerConfig] = None):
         super().__init__()
@@ -421,11 +462,11 @@ class CognitiveStateEncoder(nn.Module):
         # Learnable CLS token representing the unified cognitive state
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.config.vector_size) * 0.02)
 
-    def encode(self, token_sequence: FeatureTokenSequence) -> CognitiveLatent:
+    def encode(self, token_sequence: TokenBundle) -> Latent:
         """
-        Public method to encode relation tokens into one unified CognitiveLatent state.
+        Public method to encode relation tokens into one unified Latent state.
         """
-        x = token_sequence.tokens
+        x = token_sequence.tensor
         batch_size = x.size(0)
         
         # Prepend [CLS] token to input sequence
@@ -433,17 +474,23 @@ class CognitiveStateEncoder(nn.Module):
         x_with_cls = torch.cat([cls_tokens, x], dim=1)
         
         encoded_seq = self._learn_relationships(x_with_cls)
-        return self._produce_latent(encoded_seq)
+        return self._produce_latent(encoded_seq, token_sequence.names)
 
     def _learn_relationships(self, x: torch.Tensor) -> torch.Tensor:
         """Executes Transformer self-attention blocks on the input feature tokens."""
         # Note: The Shiva Encoder applies self-attention across the token sequence
         return self.encoder(x)
 
-    def _produce_latent(self, x: torch.Tensor) -> CognitiveLatent:
-        """Extracts the contextualized [CLS] token representation as the latent state."""
-        latent_vector = x[:, 0] # shape: (batch_size, vector_size)
-        return CognitiveLatent(latent_vector=latent_vector)
+    def _produce_latent(self, x: torch.Tensor, feature_names: List[str]) -> Latent:
+        """Extracts pooled latent representation and contextualized individual feature tokens."""
+        vector = x[:, 0] # shape: (batch_size, vector_size)
+        
+        # Map each feature name to its post-attention output token (offset by 1 for CLS)
+        features = {}
+        for i, name in enumerate(feature_names):
+            features[name] = x[:, i + 1]
+            
+        return Latent(vector=vector, features=features)
 
 
 # ==============================================================================
@@ -458,10 +505,6 @@ class AppraisalNetwork(nn.Module):
 
     def __init__(self, vector_size: int = 64, hidden_dim: int = 512):
         super().__init__()
-        
-        # MLP maps feature vector size to 13 dimensions
-        # Novelty, Threat, Reward, Goal Relevance, Importance, Urgency, Controllability, 
-        # Familiarity, Confidence, Prediction Error, Information Gain, Agency, Social Importance
         self.mlp = nn.Sequential(
             nn.Linear(vector_size, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -471,11 +514,11 @@ class AppraisalNetwork(nn.Module):
             nn.Sigmoid() # Bounds appraisal intensities between 0.0 and 1.0
         )
 
-    def predict(self, latent: CognitiveLatent) -> AppraisalDTO:
+    def predict(self, latent: Latent) -> AppraisalDTO:
         """
-        Public method to predict appraisal values from a CognitiveLatent state.
+        Public method to predict appraisal values from a Latent state.
         """
-        predictions = self._predict_dimensions(latent.latent_vector)
+        predictions = self._predict_dimensions(latent.vector)
         return self._produce_dto(predictions)
 
     def _predict_dimensions(self, latent_vector: torch.Tensor) -> torch.Tensor:
@@ -523,22 +566,32 @@ class AppraisalEngine(nn.Module, IAppraisal):
         self.network = network
 
     def evaluate(self, event: Any) -> AppraisalDTO:
+        """
+        Public method implementing IAppraisal. Evaluates a FeatureBundle through
+        the cognitive appraisal pipeline.
+        """
         return self._orchestrate(event)
 
     def _orchestrate(self, event: Any) -> AppraisalDTO:
+        """Orchestrates the sequential flow of information through pipeline stages."""
+        # Ensure event is a FeatureBundle
         if not isinstance(event, FeatureBundle):
             raise TypeError(f"AppraisalEngine expects FeatureBundle, got {type(event)}")
             
         feature_vector = self.extractor.extract(event)
-        token_sequence = self.embedding.embed(feature_vector)
-        latent = self.encoder.encode(token_sequence)
+        token_bundle = self.embedding.embed(feature_vector)
+        latent = self.encoder.encode(token_bundle)
         appraisal_dto = self.network.predict(latent)
         
         return appraisal_dto
 
     def forward(self, bundle: FeatureBundle) -> torch.Tensor:
+        """
+        End-to-end forward pass returning the raw predictions tensor (batch, 13).
+        Enables end-to-end backpropagation through the learnable modules.
+        """
         feature_vector = self.extractor.extract(bundle)
-        token_sequence = self.embedding.embed(feature_vector)
-        latent = self.encoder.encode(token_sequence)
-        predictions = self.network._predict_dimensions(latent.latent_vector)
+        token_bundle = self.embedding.embed(feature_vector)
+        latent = self.encoder.encode(token_bundle)
+        predictions = self.network._predict_dimensions(latent.vector)
         return predictions
