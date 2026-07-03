@@ -138,9 +138,30 @@ class FeatureExtractor:
         # Environment
         env = dtos.get("environment")
         numerical["env_battery_percentage"] = float(env.battery_percentage) if env and env.battery_percentage is not None else 100.0
-        numerical["env_cpu_utilization"] = float(env.cpu_utilization) if env and env.cpu_utilization is not None else 0.0
+        
+        # CPU Utilization
+        if env and env.cpu_utilization is not None and env.cpu_utilization > 0.0:
+            numerical["env_cpu_utilization"] = float(env.cpu_utilization)
+        else:
+            try:
+                import psutil
+                numerical["env_cpu_utilization"] = float(psutil.cpu_percent())
+            except Exception:
+                numerical["env_cpu_utilization"] = float(env.cpu_utilization) if env and env.cpu_utilization is not None else 0.0
+                
+        # GPU Utilization (Default to DTO value if present)
         numerical["env_gpu_utilization"] = float(env.gpu_utilization) if env and env.gpu_utilization is not None else 0.0
-        numerical["env_available_memory"] = float(env.available_memory) if env and env.available_memory is not None else 0.0
+        
+        # Available Memory (in GB)
+        if env and env.available_memory is not None and env.available_memory > 0.0:
+            numerical["env_available_memory"] = float(env.available_memory)
+        else:
+            try:
+                import psutil
+                # Convert bytes to GB
+                numerical["env_available_memory"] = float(psutil.virtual_memory().available / (1024 ** 3))
+            except Exception:
+                numerical["env_available_memory"] = float(env.available_memory) if env and env.available_memory is not None else 0.0
         
         # Emotion
         emo = dtos.get("emotion")
