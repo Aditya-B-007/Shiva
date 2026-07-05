@@ -1,5 +1,3 @@
-# shiva.ai
-
 <div align="center">
 
 # shiva.ai
