@@ -1,152 +1,472 @@
-#  Shiva AGI: Universal Gated Cognitive Engine
+# Shiva.ai
 
+<div align="center">
+
+# 🕉 Shiva.ai
+
+### An Open-Source Cognitive Architecture for Autonomous AI Systems
+
+*"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, and acts."*
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/python-3.11+-green.svg)
+![Status](https://img.shields.io/badge/status-active%20development-orange.svg)
+![Research](https://img.shields.io/badge/research-cognitive%20AI-purple.svg)
+
+</div>
+
+---
 <img width="2000" height="2000" alt="shiva ai" src="https://github.com/user-attachments/assets/24f134a5-aae8-4044-879a-ae0c431e08b4" />
 
+# Why Shiva?
 
-> **"Creating the brain is the hardest part as using pure mathematics we need to build a biological brain."**
+Artificial Intelligence has made tremendous progress in language understanding, image generation, and reasoning. Large Language Models (LLMs) can write software, solve mathematical problems, summarize documents, and converse fluently.
 
-Shiva is a domain-agnostic Artificial General Intelligence (AGI) framework engineered to bridge the gap between completely heterogeneous data streams—such as Robotics, Finance, and Edge Systems—by unifying them into a highly disciplined **Universal Latent Space ($z \in \mathbb{R}^{512}$)**.
+Yet these systems remain fundamentally **reactive**.
 
-Inspired by the ultimate paradox of Hindu mythology—where Lord Shiva represents both the raw, dynamic chaos of the cosmic dance (*Tandava*) and the absolute, unshakeable stillness of the ultimate yogi (*Mahayogi*)—this engine achieves structural equilibrium by balancing fluid environmental adaptation with a deeply anchored, identity-grounded internal core.
+They generate outputs conditioned on inputs, but they do not possess a continuously evolving internal cognitive state.
 
-What is the USP of using Shiva over other models and frameworks ?
-1. Instant Cross-Domain ROI (Zero-Shot Capitalization): Businesses no longer need to train separate, isolated AI pipelines for different departments. Because Shiva projects text, logistics, and telemetry into a single Universal Latent Space (z∈R 
-512
- ), structural patterns optimized in one operational sector (e.g., supply chain physical bottleneck analysis) can instantly be deployed to solve problems in an entirely different sector (e.g., digital transactional workflows) without re-training costs.
+They do not regulate themselves.
 
-2. Safe Autonomous Decision-Making (Risk-Mitigated Control): Traditional automation operates on rigid "if/then" rules or hyper-aggressive optimization curves that can damage physical equipment or violate corporate compliance. Shiva’s Homeostatic Vector and Valence Network continuously monitor internal system strain (Arousal, Energy, Safety, Engagement). The AI evaluates the "ethical weight" and operational safety of its choices before execution, ensuring steady, self-regulated risk management across physical or financial applications.
+They do not possess intrinsic motivations.
 
-3. Elimination of "AI Hallucinations" via Context Grounding: By fusing real-time environmental input with a dedicated Narrative Encoder (Episodic Memory) and a learnable self-token, Shiva distinguishes its own historical execution state from external noise. This narrative identity grounding stabilizes the continuous policy, ensuring that executive actions are rooted in enterprise identity and past organizational experience.
+They do not remember experiences in the way biological organisms do.
 
-4. Dynamic Strategic Agility (Dual-Actor SAC): Business conditions shift from aggressive growth phases to defensive risk management. Shiva’s Blended Policy dynamically balances two conflicting expert models (e.g., Max-Efficiency Objective vs. Maximum-Stability/Compliance). An automated conscious gate mixes these strategies in real-time, matching changing corporate priorities without human intervention.
+They do not maintain physiological balance while making decisions.
 
-5. Uncapped Legacy Integration ("Frankenmerging"): Protects capital investments in legacy infrastructure and open-source foundation software. Through built-in truncated SVD and bucket-averaging, Shiva can dynamically ingest and adapt pre-trained parameters from massive external models (like Llama-3) directly into its architecture, bypassing traditional restrictions caused by incompatible network sizes, sequence dimensions, or layer counts.
+They do not learn from experience as a continuously living system.
 
-6. Secure Distributed Operations (Cryptographic Locomotion): Solves the compute-cost and latency crisis of edge environments. When a node needs to migrate from central cloud environments to localized branch servers, factory floors, or edge hardware, the entire running cognitive state—weights, experiential memory banks, and homeostatic rules—is bundled into a single binary payload protected by HMAC-SHA256 signatures to fully secure corporate IP against remote code execution exploits during transit.
+Most AI today behaves like an incredibly intelligent calculator rather than an autonomous cognitive agent.
 
-7. Resilient, Non-Collapsing Swarms (Collective Operational Intelligence): Enables thousands of edge devices or regional nodes to coordinate via a Global Workspace Aggregator, instantly broadcasting field discoveries to the entire network. Crucially, a specialized anti-collapse diversity loss forces individual nodes to preserve their localized operational expertise, preventing the network from descending into redundant, unoptimized echo chambers.
-
-8. IP Protection via Activation Capture (Parasitic Distillation): Allows organizations to safely extract operational intelligence from locked, third-party black-box models or restricted external APIs. By using non-intrusive forward hooks that log intermediate activations, Shiva mirrors the underlying knowledge and logic of an external vendor system without ever needing access to, or infringing upon, the proprietary weights of the host code.
+Shiva.ai was created to explore a different direction.
 
 ---
 
-## 🏗️ Core Architecture & Cognitive Pipeline
+# The Problem
+
+Today's AI systems generally consist of a single reasoning engine surrounded by tools.
 
 ```
-                +---------------------------------------+
-                |          Heterogeneous Inputs         |
-                |   (Robotics, Finance, Edge, etc.)     |
-                +---------------------------------------+
-                                    |
-                                    v
-                        +-----------------------+
-                        |     LatentAligner     | ---> Multi-Modal / Emotional Alignment
-                        +-----------------------+
-                                    |
-                                    v
-                     +-----------------------------+
-                     |  Universal Latent Space (z) |
-                     +-----------------------------+
-                                    |
-          +-------------------------+-------------------------+
-          |                                                   |
-          v                                                   v
-+-------------------+                               +-------------------+
-|   EmotionalCore   |     |  EpisodicMemory   |
-| (Homeostasis &    |                               | (Significance-    |
-| Valence Networks) |                               | Weighted Replay)  |
-+-------------------+                               +-------------------+
-          |                                                   |
-          v (Valence Bias)| v (Identity Context)
-    +-----------+                                       +-----------+
-    | Attention |                                       | Blending  |
-    | Blocks    |                                       | Gate      |
-    +-----------+                                       +-----------+
-          |                                                   |
-          +-------------------------+-------------------------+
-                                    |
-                                    v
-                      +---------------------------+
-                      |    ContinuousSACPolicy    |
-                      |   (Blended Dual Actors)   |
-                      +---------------------------+
-                                    |
-                                    v
-                             [Action Output]
-
+Input
+   ↓
+Large Language Model
+   ↓
+Output
 ```
 
-<img width="4096" height="777" alt="image" src="https://github.com/user-attachments/assets/0a5b5719-b148-46c3-afc0-b04b77939127" />
+Memory is often implemented as vector retrieval.
 
+Planning is often implemented as prompt engineering.
 
+Emotion usually does not exist.
 
-### 1. The Custom Transformer Backbone (`transformer_architecture.py`)
+Internal regulation is absent.
 
-* **GateHyperNetworks:** Rather than relying on rigid, static residual connections, Shiva utilizes zero-initialized hyper-networks to output an optimized, per-token gating signal $\in (0, 1)$. This dynamically opens or closes residual paths based on real-time data data streams.
-* **Affective Attention Shifting:** Features an emotionally modulated attention bias where internal valence signals from the `EmotionalCore` directly alter attention logits right before softmax execution.
+Identity disappears after every interaction.
 
-### 2. Dual-Actor Soft-Gate SAC Policy (`shiva_policy.py`)
+While these approaches work well for task completion, they are fundamentally limited when building truly autonomous agents capable of long-term operation.
 
-* **Identity Grounding:** Pooling layers compress raw latent sequences and blend them with historical, narrative self-contexts generated by episodic memory, creating an "identity-grounded conscious latent".
-* **Dynamic Expert Blending:** A dedicated neural gating network maps this conscious representation into a scalar value $g \in (0, 1)$. This gate dynamically weights and blends the distribution metrics ($\mu, \log \sigma$) of two distinct expert actors (e.g., *Stability vs. Objective Optimization*) before pulling sample actions via the reparameterization trick.
+The challenge is no longer making AI answer questions.
 
-### 3. Synthetic Affective Layer (`emotional_core.py`)
-
-* **Homeostatic Drive Tracking:** Keeps track of an internal four-dimensional vector: *[Arousal, Energy, Safety, Engagement]*. Arousal scales up with environmental surprise, while Energy depletes based on action impact. Systemic strain is modeled as the distance from an optimal homeostatic baseline.
-* **Valence Network:** A multi-layer network that fuses external environment latents with internal homeostatic state variables to output a continuous, real-time scalar valence score.
-
-### 4. Significance-Weighted Episodic Memory (`episodic_memory.py`)
-
-* **Prioritized Dreaming Phase:** Moves away from standard chronological memory buffers in favor of a significance-weighted matrix. Experiences with high emotional salience or high empowerment are replayed preferentially during training dream cycles.
-* **Narrative Context Encoder:** Runs a recurrent GRU network combined with a learnable, isolated `self_token` parameter. This ensures the agent distinguishes its own internal representation states from ambient environmental data.
+The challenge is building AI that can **maintain itself**.
 
 ---
 
-## ⚡ Key Capabilities & Paradigm Shifts
+# Our Approach
 
-### 🔮 Zero-Shot Domain Transfer (`latent_alignment.py`)
+Shiva approaches intelligence as a **cognitive control system** rather than a sequence prediction problem.
 
-By establishing a unified InfoNCE and Tri-Modal contrastive loss paradigm, Shiva maps varied modalities (vision, text, token streams, or physical motor vectors) into a shared mathematical bottleneck. This allows knowledge gained in physical environments (like robotic constraints) to instantly translate to abstract software tasks without retraining policy logic.
+Instead of treating intelligence as predicting the next token,
 
-### 🤝 Rapid Frankenmerging (`merge_strategies.py`)
+Shiva models intelligence as the interaction of multiple cognitive processes.
 
-Shiva features built-in architecture-agnostic weight ingestion strategies. Using truncated Singular Value Decomposition (SVD Dimension Fitting) and Attention Head Bucket-Averaging, it can hot-swap and absorb parameters from external pre-trained foundation models (e.g., Llama-3 architectures) even when layer depths, hidden dimensions, or attention head counts do not match the target framework.
+Every action emerges from the continuous interaction between
 
-### 👥 Swarm Consciousness (`SwarmAlgorithmWorkspace.py`)
+- Perception
+- Internal State
+- Emotional Appraisal
+- Homeostasis
+- Memory
+- Planning
+- Decision Making
 
-Implements decentralized swarm coordination modeled on Baars' Global Workspace Theory. Independent `SwarmNodes` register and submit localized conscious states to a central `CrossAttentionAggregator`, which broadcasts a cross-attended consensus vector back to all nodes. Echo chambers and collective pooling collapse are mathematically prevented via a dedicated anti-collapse diversity loss that actively penalizes agents for producing identical latents:
-
-### 🦹 Parasitic Activation Interception (`ModelWeightParasiticExtraction.py`)
-
-When interacting with proprietary black-box software, quantized parameters, or external third-party API configurations where direct weights are inaccessible, Shiva deploys an online representation distillation network. Non-intrusive forward hooks capture intermediate activations ($h$) during host inference, passing them to a lightweight projection probe that aligns Shiva's backbone to the host's learned structure via contrastive lower bounds on mutual information.
-
-### 🧳 Secure Autonomous Locomotion (`ModelMovementAndLocomotion.py`)
-
-When a node needs to migrate across distributed clusters, cloud environments, or physical edge hardware, Shiva packages its entire consciousness—model weights, episodic memory queues, homeostatic states, and identity tokens—into a cryptographically signed binary payload. Protected by an HMAC-SHA256 signature envelope, the snapshot can be securely transmitted via plain HTTP development hooks or high-performance, streaming mutual-TLS gRPC transport channels.
-
-### OpenClaw integration
-We are working on providing it API endpoints for integrating it with OpenClaw. Once done, we will duly update it over our network.
----
-
-## 🛠️ Technical Specifications
-
-* **Latent Space Dimensionality:** 512-dimension Hyper-sphere
-* **Core Optimization Policy:** Entropy-Regularized Soft Actor-Critic (SAC)
-* **Memory Traversal Efficiency:** $O(\log N)$ Torch-based SumTree with Importance Sampling correction
-* **Target Network Sync:** Polyak Soft-Update Target Averaging ($\bar{\theta} \leftarrow \tau\theta + (1-\tau)\bar{\theta}$)
-* **Base Optimization Engine:** Adam / AdamW with customized layer weight decay metrics
+This creates an agent whose behaviour evolves over time instead of being reconstructed for every prompt.
 
 ---
 
-## 🗺️ Development Roadmap
+# Cognitive Pipeline
 
-1. **Phase 1: Foundation (Complete)** — Scratch-built Gated Transformer backbone, InfoNCE alignment bottlenecks, and multi-modal projection layers.
-2. **Phase 2: Action Policy (Complete)** — Dual-Actor SAC integration, Polyak target averaging, and Torch-based SumTree prioritized experience replay.
-3. **Phase 3: Affective Layer (Complete)** — Valence mapping networks, homeostatic drive tracking models, and significance-driven dream cycles.
-4. **Phase 4: Autonomy (In Progress)** — Implementation of an automated reward constructor from high-level natural language intent, swarm scale validation, and zero-shot multi-domain cross-benchmarking.
+```
+                  Environment
+                       │
+                       ▼
+             Multi-Modal Perception
+                       │
+                       ▼
+             Universal Latent Space
+                       │
+         ┌─────────────┴─────────────┐
+         │                           │
+         ▼                           ▼
+ Emotional Appraisal          Episodic Memory
+         │                           │
+         ▼                           ▼
+     Homeostasis          Narrative Identity
+         │                           │
+         └─────────────┬─────────────┘
+                       ▼
+                 Action Planning
+                       │
+                       ▼
+               Reinforcement Policy
+                       │
+                       ▼
+                    Actions
+                       │
+                       ▼
+                 Updated State
+```
+
+Unlike conventional AI systems, every subsystem continuously influences every other subsystem.
+
+Memory changes emotion.
+
+Emotion changes attention.
+
+Attention changes planning.
+
+Planning changes action.
+
+Actions change future memories.
+
+The entire architecture behaves as a closed cognitive feedback loop.
 
 ---
 
-## 📜 License
+# Design Philosophy
 
-This architecture is distributed under the open-source **Apache License 2.0**. Review the accompanying `LICENSE` file for full terms, conditions, and liability disclaimers.
+Shiva is inspired by the observation that biological intelligence does not emerge from a single algorithm.
+
+Instead, it emerges through the interaction of many specialized systems.
+
+Our design philosophy is based on several principles:
+
+- Intelligence is an action-selection problem.
+- Memory should influence future behaviour.
+- Emotion is an adaptive computational signal.
+- Internal regulation is necessary for stability.
+- Learning should occur continuously.
+- Knowledge should transfer across domains.
+- Cognitive systems should be modular rather than monolithic.
+
+---
+
+# Core Concepts
+
+## Universal Latent Space
+
+Modern AI systems frequently build independent models for every modality.
+
+Text.
+
+Images.
+
+Robotics.
+
+Financial data.
+
+Sensor streams.
+
+This prevents efficient transfer of knowledge.
+
+Shiva projects heterogeneous information into a shared latent representation.
+
+```
+Robotics ─┐
+Finance ──┤
+Vision ───┤
+Language ─┤
+Sensors ──┤
+           ▼
+Universal Latent Space (z ∈ ℝ⁵¹²)
+```
+
+Operating within a common representation allows reasoning modules to become domain-agnostic rather than domain-specific.
+
+---
+
+## Emotional Appraisal
+
+Emotion is not implemented as human-like feelings.
+
+Instead, emotions function as computational signals representing the significance of environmental events.
+
+These signals dynamically influence
+
+- Attention
+- Memory Formation
+- Decision Making
+- Learning Priority
+
+Emotion therefore becomes another optimization signal instead of cosmetic behaviour.
+
+---
+
+## Homeostasis
+
+Biological organisms continuously regulate themselves.
+
+Body temperature.
+
+Energy.
+
+Stress.
+
+Safety.
+
+Artificial agents generally do not.
+
+Shiva introduces an internal homeostatic model that continuously monitors variables such as
+
+- Energy
+- Arousal
+- Safety
+- Engagement
+
+Rather than blindly maximizing reward, the agent attempts to maintain internal stability while pursuing external goals.
+
+---
+
+## Episodic Memory
+
+Traditional AI memory systems retrieve similar documents.
+
+Shiva stores experiences.
+
+Each experience receives a significance score determined by
+
+- Emotional salience
+- Novelty
+- Reward
+- Empowerment
+
+Important experiences become easier to replay during future learning.
+
+This gradually forms a persistent narrative identity.
+
+---
+
+## Action Planning
+
+Rather than directly predicting outputs, Shiva selects actions.
+
+Planning considers
+
+- Current environment
+- Internal physiological state
+- Previous experiences
+- Long-term objectives
+- Competing priorities
+
+This produces behaviour that changes over time instead of remaining stateless.
+
+---
+
+## Dual Policy Reinforcement Learning
+
+Real-world decision making often involves conflicting objectives.
+
+Examples include
+
+- Performance vs Safety
+- Speed vs Accuracy
+- Exploration vs Exploitation
+
+Shiva employs multiple expert policies and dynamically blends them according to the current internal state of the agent.
+
+---
+
+## Modular Cognitive Architecture
+
+Every subsystem is implemented independently.
+
+Developers may replace
+
+- Memory
+- Transformer Backbone
+- Emotion Engine
+- Homeostasis
+- Planning
+- Reinforcement Learning Policy
+- Swarm Coordination
+
+without modifying the remainder of the architecture.
+
+---
+
+# Technical Concepts
+
+Shiva combines ideas from multiple research disciplines.
+
+## Deep Learning
+
+- Transformer Architectures
+- Multi-Modal Representation Learning
+- Contrastive Learning
+- Hypernetwork Gating
+- Dynamic Attention
+
+## Reinforcement Learning
+
+- Soft Actor-Critic (SAC)
+- Prioritized Experience Replay
+- Polyak Averaging
+- Entropy Regularization
+
+## Cognitive Science
+
+- Episodic Memory
+- Emotional Appraisal
+- Homeostasis
+- Narrative Identity
+- Attention Modulation
+
+## Distributed Intelligence
+
+- Swarm Cognition
+- Secure Model Migration
+- Parameter Frankenmerging
+- Representation Distillation
+
+The objective is not to invent entirely new algorithms.
+
+The objective is to integrate existing ideas into a coherent cognitive architecture.
+
+---
+
+# Current Features
+
+## Core Architecture
+
+- Transformer Backbone
+- Universal Latent Space
+- Dynamic Hypernetwork Gates
+- Emotional Attention Bias
+
+## Cognitive Layer
+
+- Emotional Engine
+- Homeostasis Engine
+- Episodic Memory
+- Narrative Identity
+
+## Reinforcement Learning
+
+- Dual Actor Soft Actor-Critic
+- Prioritized Experience Replay
+- Continuous Action Selection
+
+## Distributed Intelligence
+
+- Swarm Coordination
+- Secure Model Migration
+- Frankenmerging
+- Activation Distillation
+
+---
+
+# Current Development Roadmap
+
+## Phase 1 — Foundation ✅
+
+- Transformer Backbone
+- Multi-modal Alignment
+- Universal Latent Space
+
+---
+
+## Phase 2 — Decision Making ✅
+
+- Dual Actor SAC
+- Experience Replay
+- Policy Learning
+
+---
+
+## Phase 3 — Cognitive Layer ✅
+
+- Emotion Engine
+- Homeostasis
+- Episodic Memory
+- Narrative Identity
+
+---
+
+## Phase 4 — Autonomous Intelligence 🚧
+
+- Long-Horizon Planning
+- Automated Reward Generation
+- Multi-Agent Collaboration
+- OpenClaw Integration
+- Large-Scale Benchmarks
+
+---
+
+# Research Vision
+
+Shiva is not another chatbot.
+
+It is not another LLM wrapper.
+
+It is not another prompt engineering framework.
+
+Shiva is an open-source research effort exploring a fundamental question:
+
+> **Can autonomous intelligence emerge by integrating memory, emotion, homeostasis, planning, and reinforcement learning into a unified cognitive architecture?**
+
+Rather than focusing solely on generating better language, Shiva investigates how an artificial system can develop persistent internal state, regulate itself, and make decisions over extended periods of interaction.
+
+---
+
+# Contributing
+
+Shiva is developed as an open-source research project.
+
+Contributions are welcome in
+
+- Deep Learning
+- Reinforcement Learning
+- Cognitive Science
+- Robotics
+- Distributed Systems
+- Multi-Agent Systems
+- AI Safety
+- Systems Engineering
+
+Whether you are interested in algorithms, architecture, documentation, or experimentation, your contributions are welcome.
+
+---
+
+# Citation
+
+If Shiva contributes to your research, please consider citing the repository.
+
+(BibTeX will be added upon the first stable release.)
+
+---
+
+# License
+
+Released under the MIT License.
+
+---
+
+<div align="center">
+
+## Intelligence is more than prediction.
+
+### It is perception, regulation, memory, adaptation, and action.
+
+**Welcome to Shiva.ai**
+
+</div>
