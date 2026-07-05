@@ -1,4 +1,7 @@
-# 🌌 Shiva AGI: Universal Gated Cognitive Engine
+#  Shiva AGI: Universal Gated Cognitive Engine
+
+<img width="2000" height="2000" alt="shiva ai" src="https://github.com/user-attachments/assets/24f134a5-aae8-4044-879a-ae0c431e08b4" />
+
 
 > **"Creating the brain is the hardest part as using pure mathematics we need to build a biological brain."**
 
