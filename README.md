@@ -1,8 +1,8 @@
-# Shiva.ai
+# shiva.ai
 
 <div align="center">
 
-# 🕉 Shiva.ai
+# shiva.ai
 
 ### An Open-Source Cognitive Architecture for Autonomous AI Systems
 
