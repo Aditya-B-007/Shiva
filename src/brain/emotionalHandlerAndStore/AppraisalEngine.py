@@ -261,10 +261,6 @@ class FeatureExtractor:
 # ==============================================================================
 
 class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
-    """
-    FT-Transformer Embedding layer that projects numerical features,
-    embeds categorical features, projects existing embeddings, and builds TokenBundles.
-    """
 
     def __init__(
         self,
@@ -428,13 +424,9 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
         emb_tokens: torch.Tensor,
         feature_vector: NumericalFeatureVector
     ) -> TokenBundle:
-        """Wraps projected and looked-up tokens into structured Tokens groups in a TokenBundle."""
-        # Find active external embedding names
         active_embedding_names = [
             name for name, val in feature_vector.embeddings.items() if val is not None
         ]
-        
-        # Build individual Token groups
         num_group = Tokens(values=num_tokens, names=self.numerical_keys)
         cat_group = Tokens(values=cat_tokens, names=self.categorical_keys)
         emb_group = Tokens(values=emb_tokens, names=active_embedding_names)
@@ -448,10 +440,6 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
         )
 
      def embed(self, feature_vector: NumericalFeatureVector) -> TokenBundle:
-        """
-        Public method to learn and project embeddings for all numerical,
-        categorical, and pre-existing feature vector inputs.
-        """
         num_tokens = self._project_numerical(feature_vector.numerical_features)
         cat_tokens = self._handle_categorical(feature_vector.categorical_features)
         
@@ -462,56 +450,33 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
         
         return self._learn_embeddings(num_tokens, cat_tokens, emb_tokens, feature_vector)
 
-
-# ==============================================================================
-# 3. COGNITIVE STATE ENCODER (SHIVA TRANSFORMER WRAPPER)
-# ==============================================================================
-
 class CognitiveStateEncoder(nn.Module):
-    """
-    CognitiveStateEncoder utilizes the Shiva Transformer Encoder to learn relationships
-    between the different features and pools them using a [CLS] token representation.
-    """
 
     def __init__(self, config: Optional[TransformerConfig] = None):
         super().__init__()
         self.config = config or TransformerConfig.from_env()
-        
-        # Instantiate core Shiva Encoder module
         self.encoder = Encoder(self.config)
-        
-        # Learnable CLS token representing the unified cognitive state
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.config.vector_size) * 0.02)
 
-    def encode(self, token_sequence: TokenBundle) -> Latent:
-        """
-        Public method to encode relation tokens into one unified Latent state.
-        """
-        x = token_sequence.tensor
-        batch_size = x.size(0)
-        
-        # Prepend [CLS] token to input sequence
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-        x_with_cls = torch.cat([cls_tokens, x], dim=1)
-        
-        encoded_seq = self._learn_relationships(x_with_cls)
-        return self._produce_latent(encoded_seq, token_sequence.names)
-
     def _learn_relationships(self, x: torch.Tensor) -> torch.Tensor:
-        """Executes Transformer self-attention blocks on the input feature tokens."""
-        # Note: The Shiva Encoder applies self-attention across the token sequence
         return self.encoder(x)
 
     def _produce_latent(self, x: torch.Tensor, feature_names: List[str]) -> Latent:
-        """Extracts pooled latent representation and contextualized individual feature tokens."""
-        vector = x[:, 0] # shape: (batch_size, vector_size)
-        
-        # Map each feature name to its post-attention output token (offset by 1 for CLS)
+        vector = x[:, 0]
         features = {}
         for i, name in enumerate(feature_names):
             features[name] = x[:, i + 1]
             
         return Latent(vector=vector, features=features)
+
+    def encode(self, token_sequence: TokenBundle) -> Latent:
+        x = token_sequence.tensor
+        batch_size = x.size(0)
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        x_with_cls = torch.cat([cls_tokens, x], dim=1)
+        
+        encoded_seq = self._learn_relationships(x_with_cls)
+        return self._produce_latent(encoded_seq, token_sequence.names)
 
 
 # ==============================================================================
@@ -519,11 +484,6 @@ class CognitiveStateEncoder(nn.Module):
 # ==============================================================================
 
 class AppraisalNetwork(nn.Module):
-    """
-    AppraisalNetwork utilizes an MLP to map cognitive latents to predictions of 13
-    cognitive dimensions.
-    """
-
     def __init__(self, vector_size: int = 64, hidden_dim: int = 512):
         super().__init__()
         self.mlp = nn.Sequential(
@@ -535,20 +495,10 @@ class AppraisalNetwork(nn.Module):
             nn.Sigmoid() # Bounds appraisal intensities between 0.0 and 1.0
         )
 
-    def predict(self, latent: Latent) -> AppraisalDTO:
-        """
-        Public method to predict appraisal values from a Latent state.
-        """
-        predictions = self._predict_dimensions(latent.vector)
-        return self._produce_dto(predictions)
-
     def _predict_dimensions(self, latent_vector: torch.Tensor) -> torch.Tensor:
-        """Feeds the latent state through the MLP network layers."""
         return self.mlp(latent_vector)
 
     def _produce_dto(self, predictions: torch.Tensor) -> AppraisalDTO:
-        """Maps output tensor indices to an AppraisalDTO object."""
-        # Convert first element in the batch to values list for single evaluation
         preds = predictions[0].tolist()
         return AppraisalDTO(
             novelty=preds[0],
@@ -565,11 +515,9 @@ class AppraisalNetwork(nn.Module):
             agency=preds[11],
             social_importance=preds[12],
         )
-
-
-# ==============================================================================
-# 5. APPRAISAL ENGINE (ORCHESTRATOR)
-# ==============================================================================
+    def predict(self, latent: Latent) -> AppraisalDTO:
+        predictions = self._predict_dimensions(latent.vector)
+        return self._produce_dto(predictions)
 
 class AppraisalEngine(nn.Module, IAppraisal):
 
@@ -607,10 +555,6 @@ class AppraisalEngine(nn.Module, IAppraisal):
         return appraisal_dto
 
     def forward(self, bundle: FeatureBundle) -> torch.Tensor:
-        """
-        End-to-end forward pass returning the raw predictions tensor (batch, 13).
-        Enables end-to-end backpropagation through the learnable modules.
-        """
         feature_vector = self.extractor.extract(bundle)
         token_bundle = self.embedding.embed(feature_vector)
         latent = self.encoder.encode(token_bundle)
