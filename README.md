@@ -14,6 +14,7 @@
 </div>
 
 ---
+<img width="2000" height="2000" alt="shiva ai" src="https://github.com/user-attachments/assets/24f134a5-aae8-4044-879a-ae0c431e08b4" />
 
 # Why Shiva?
 
@@ -187,6 +188,37 @@ Sensors ──┤
            ▼
 Universal Latent Space (z ∈ ℝ⁵¹²)
 ```
+                  Environment
+                       │
+                       ▼
+             Multi-Modal Perception
+                       │
+                       ▼
+             Universal Latent Space
+                       │
+         ┌─────────────┴─────────────┐
+         │                           │
+         ▼                           ▼
+ Emotional Appraisal          Episodic Memory
+         │                           │
+         ▼                           ▼
+     Homeostasis          Narrative Identity
+         │                           │
+         └─────────────┬─────────────┘
+                       ▼
+                 Action Planning
+                       │
+                       ▼
+               Reinforcement Policy
+                       │
+                       ▼
+                    Actions
+                       │
+                       ▼
+                 Updated State
+```
+
+Unlike conventional AI systems, every subsystem continuously influences every other subsystem.
 
 Operating within a common representation allows reasoning modules to become domain-agnostic rather than domain-specific.
 
@@ -409,8 +441,6 @@ The objective is to integrate existing ideas into a coherent cognitive architect
 
 ---
 
-<img width="2056" height="1814" alt="image" src="https://github.com/user-attachments/assets/8583ab7f-6277-4687-9bc3-5b4550468f3e" />
-
 # Research Vision
 
 Shiva is not another chatbot.
@@ -429,7 +459,7 @@ Rather than focusing solely on generating better language, Shiva investigates ho
 
 # Contributing
 
-Shiva is developed as an open-source research project. In the future it will be made to be paid just for the frankenmerging part.
+Shiva is developed as an open-source research project.
 
 Contributions are welcome in
 
