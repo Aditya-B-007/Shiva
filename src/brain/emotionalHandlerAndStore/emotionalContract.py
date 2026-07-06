@@ -300,3 +300,34 @@ class FeatureBundle:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     bundle_id: str = field(default_factory=lambda: str(uuid4()))
+
+
+@dataclass(slots=True)
+class NumericalFeatureVector:
+
+    numerical_features: Dict[str, float]
+
+    categorical_features: Dict[str, str]
+
+    embeddings: Dict[str, Any]
+
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass(slots=True)
+class FeatureTokenSequence:
+
+    tokens: Any
+
+    feature_names: List[str]
+
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass(slots=True)
+class CognitiveLatent:
+
+    latent_vector: Any
+
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+

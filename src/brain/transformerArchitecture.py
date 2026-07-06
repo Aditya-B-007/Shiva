@@ -3,8 +3,9 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from dotenv import load_dotenv
-from base.PositionalEncodingInterface import PositionalEncodingInterface
-
+from .PositionalEncoding.SinusoidalPositionalEncoding import SinusoidalPositionalEncoding
+from .PositionalEncoding.RoPEPositionalEncoding import RotaryPositionalEncoding
+from .PositionalEncoding.AliBiPositionalEncoding import ALiBiPositionalEncoding
 load_dotenv()
 
 ###########################################################################

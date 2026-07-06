@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from emotionInterfaces import (
+from emotionInterface import (
     IAppraisal,
     IEmotionDynamics,
     IHomeostasis,

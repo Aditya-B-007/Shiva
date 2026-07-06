@@ -128,3 +128,11 @@ class IEmotionDatabase(ABC):
     @abstractmethod
     def retrieve(self,query: Any,) -> Any:
         pass
+
+
+class IFeatureEmbedding(ABC):
+
+    @abstractmethod
+    def embed(self, feature_vector: Any) -> Any:
+        pass
+

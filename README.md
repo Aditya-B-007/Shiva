@@ -188,6 +188,37 @@ Sensors ──┤
            ▼
 Universal Latent Space (z ∈ ℝ⁵¹²)
 ```
+                  Environment
+                       │
+                       ▼
+             Multi-Modal Perception
+                       │
+                       ▼
+             Universal Latent Space
+                       │
+         ┌─────────────┴─────────────┐
+         │                           │
+         ▼                           ▼
+ Emotional Appraisal          Episodic Memory
+         │                           │
+         ▼                           ▼
+     Homeostasis          Narrative Identity
+         │                           │
+         └─────────────┬─────────────┘
+                       ▼
+                 Action Planning
+                       │
+                       ▼
+               Reinforcement Policy
+                       │
+                       ▼
+                    Actions
+                       │
+                       ▼
+                 Updated State
+```
+
+Unlike conventional AI systems, every subsystem continuously influences every other subsystem.
 
 Operating within a common representation allows reasoning modules to become domain-agnostic rather than domain-specific.
 
