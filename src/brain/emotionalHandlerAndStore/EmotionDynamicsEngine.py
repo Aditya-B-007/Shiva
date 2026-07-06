@@ -42,6 +42,7 @@ if load_dotenv is not None:
     load_dotenv()
 
 
+#============CONSTANTS===============
 EmotionalStateVector = Dict[str, float]
 EmotionTokenSequence = TokenBundle
 EmotionalLatent = Latent
@@ -108,9 +109,10 @@ DOMINANT_EMOTIONS: Tuple[str, ...] = (
 )
 
 
+#============HELPER FUNCTIONS===============
 def _env_bool(name: str, default: str) -> bool:
     value = os.getenv(name, default).strip().lower()
-    return value in {"1", "true", "yes", "on"} #----------> 
+    return value in {"1", "true", "yes", "on"}
 
 
 def _env_int(name: str) -> int:
@@ -140,22 +142,10 @@ def _env_str(name: str) -> str:
     return value.strip()
 
 
-# ==============================================================================
-# EmotionInputBuilder
-#
-# Purpose
-# Build deterministic scalar emotional state vectors for the dynamics model.
-#
-# Responsibilities
-# Validate appraisal, previous emotion, and homeostasis DTOs; extract scalar fields;
-# and produce a deterministic EmotionalStateVector with stable feature ordering.
-#
-# Inputs
-# AppraisalDTO, previous EmotionDTO, HomeostasisDTO.
-#
-# Outputs
-# EmotionalStateVector.
-# ==============================================================================
+#============ABSTRACT CLASSES AND PROTOCOLS===============
+
+
+#============CONCRETE IMPLEMENTATIONS & DATA STRUCTURES===============
 class EmotionInputBuilder:
 
     def __init__(
@@ -261,6 +251,7 @@ class EmotionEmbedding(nn.Module):
 
     def forward(self, state_vector: EmotionalStateVector) -> torch.Tensor:
         return self.embed(state_vector).tensor
+
 
 class EmotionModel(nn.Module):
 
@@ -404,7 +395,8 @@ class EmotionModel(nn.Module):
         if isinstance(outputs, (tuple, list)) and outputs and isinstance(outputs[0], torch.Tensor):
             return outputs[0]
         raise RuntimeError("Emotion backbone output does not contain a sequence tensor")
-    
+
+
 class EmotionGenerator(nn.Module):
 
     def __init__(
