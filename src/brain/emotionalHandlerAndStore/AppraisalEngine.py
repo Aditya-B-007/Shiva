@@ -51,10 +51,7 @@ except ImportError:
         from src.brain.transformerArchitecture import TransformerConfig, Encoder
 
 
-# ==============================================================================
-# SCHEMA DEFINITIONS AND CONFIGURATION KEYS
-# ==============================================================================
-
+#============CONSTANTS===============
 NUMBERS = [
     # Perception
     "perception_confidence",
@@ -106,10 +103,13 @@ VOCABS = {
 }
 
 
-# ==============================================================================
-# 1. FEATURE EXTRACTOR
-# ==============================================================================
+#============HELPER FUNCTIONS===============
 
+
+#============ABSTRACT CLASSES AND PROTOCOLS===============
+
+
+#============CONCRETE IMPLEMENTATIONS & DATA STRUCTURES===============
 class FeatureExtractor:
     """
     FeatureExtractor extracts numerical values, categorical values, and pre-existing
@@ -254,11 +254,7 @@ class FeatureExtractor:
         categorical = self._extract_categorical(dtos)
         embeddings = self._extract_embeddings(dtos)
         return self._produce_vector(numerical, categorical, embeddings)
-    
 
-# ==============================================================================
-# 2. FT-TRANSFORMER FEATURE EMBEDDING (OPEN SOURCE MODULAR STYLE)
-# ==============================================================================
 
 class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
 
@@ -439,7 +435,7 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
             }
         )
 
-     def embed(self, feature_vector: NumericalFeatureVector) -> TokenBundle:
+    def embed(self, feature_vector: NumericalFeatureVector) -> TokenBundle:
         num_tokens = self._project_numerical(feature_vector.numerical_features)
         cat_tokens = self._handle_categorical(feature_vector.categorical_features)
         
@@ -449,6 +445,7 @@ class FTTransformerFeatureEmbedding(nn.Module, IFeatureEmbedding):
         emb_tokens = self._project_embeddings(feature_vector.embeddings, batch_size, device)
         
         return self._learn_embeddings(num_tokens, cat_tokens, emb_tokens, feature_vector)
+
 
 class CognitiveStateEncoder(nn.Module):
 
@@ -478,10 +475,6 @@ class CognitiveStateEncoder(nn.Module):
         encoded_seq = self._learn_relationships(x_with_cls)
         return self._produce_latent(encoded_seq, token_sequence.names)
 
-
-# ==============================================================================
-# 4. APPRAISAL NETWORK
-# ==============================================================================
 
 class AppraisalNetwork(nn.Module):
     def __init__(self, vector_size: int = 64, hidden_dim: int = 512):
@@ -515,9 +508,11 @@ class AppraisalNetwork(nn.Module):
             agency=preds[11],
             social_importance=preds[12],
         )
+
     def predict(self, latent: Latent) -> AppraisalDTO:
         predictions = self._predict_dimensions(latent.vector)
         return self._produce_dto(predictions)
+
 
 class AppraisalEngine(nn.Module, IAppraisal):
 
