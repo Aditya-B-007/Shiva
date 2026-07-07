@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+try:
+    from emotionalHandlerAndStore.emotionInterface import IMemoryEngine
+except ImportError:
+    try:
+        from ..emotionalHandlerAndStore.emotionInterface import IMemoryEngine
+    except ImportError:
+        from src.brain.emotionalHandlerAndStore.emotionInterface import IMemoryEngine
+
+
 from .algorithms.Consolidator import Consolidator
 from .algorithms.DreamGenerator import DreamGenerator
 from .algorithms.ForgettingModel import ForgettingModel
@@ -17,7 +26,7 @@ from .graph.MemoryNode import MemoryNode, MemoryStatus, clamp_unit
 from .repository.MemoryRepository import MemoryRepository
 
 
-class MemoryEngine:
+class MemoryEngine(IMemoryEngine):
     def __init__(
         self,
         graph: MemoryGraph | None = None,

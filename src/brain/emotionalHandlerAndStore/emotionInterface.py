@@ -12,20 +12,14 @@ class IAppraisal(ABC):
 class IEmotionDynamics(ABC):
 
     @abstractmethod
-    def update(self,appraisal: Any,) -> Any:
+    def evaluate(
+        self,
+        appraisal: Any,
+        previous_emotion: Any,
+        homeostasis: Any,
+    ) -> Any:
         pass
 
-    @abstractmethod
-    def current_state(self) -> Any:
-        pass
-
-    @abstractmethod
-    def restore(self) -> None:
-        pass
-
-    @abstractmethod
-    def reset(self) -> None:
-        pass
 
 class IHomeostasis(ABC):
 
@@ -135,4 +129,34 @@ class IFeatureEmbedding(ABC):
     @abstractmethod
     def embed(self, feature_vector: Any) -> Any:
         pass
+
+
+class IMemoryEngine(ABC):
+
+    @abstractmethod
+    def store(
+        self,
+        perception: Any,
+        emotion: Any = None,
+        homeostasis: Any = None,
+        context: Any = None,
+    ) -> Any:
+        pass
+
+    @abstractmethod
+    def retrieve(self, query: Any, limit: int = 5) -> Any:
+        pass
+
+    @abstractmethod
+    def sleep(self) -> Any:
+        pass
+
+    @abstractmethod
+    def load(self) -> None:
+        pass
+
+    @abstractmethod
+    def save(self) -> None:
+        pass
+
 

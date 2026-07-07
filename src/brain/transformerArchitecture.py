@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from .PositionalEncoding.SinusoidalPositionalEncoding import SinusoidalPositionalEncoding
 from .PositionalEncoding.RoPEPositionalEncoding import RotaryPositionalEncoding
 from .PositionalEncoding.AliBiPositionalEncoding import ALiBiPositionalEncoding
+from .PositionalEncoding.PositionalEncodingInterface import PositionalEncodingInterface
 load_dotenv()
 
 ###########################################################################

@@ -37,6 +37,15 @@ except ImportError:
             HomeostasisDTO,
         )
 
+try:
+    from emotionInterface import IEmotionDynamics
+except ImportError:
+    try:
+        from .emotionInterface import IEmotionDynamics
+    except ImportError:
+        from src.brain.emotionalHandlerAndStore.emotionInterface import IEmotionDynamics
+
+
 
 if load_dotenv is not None:
     load_dotenv()
@@ -452,7 +461,7 @@ class EmotionGenerator(nn.Module):
         return self.mlp(latent.vector)
 
 
-class EmotionDynamicsEngine(nn.Module):
+class EmotionDynamicsEngine(nn.Module, IEmotionDynamics):
 
     def __init__(
         self,

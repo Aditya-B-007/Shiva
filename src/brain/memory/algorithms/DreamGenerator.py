@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from ..graph.MemoryGraph import MemoryGraph
 from ..graph.MemoryNode import MemoryNode, MemoryStatus
 

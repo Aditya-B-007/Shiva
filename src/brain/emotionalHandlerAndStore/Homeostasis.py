@@ -7,6 +7,18 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Mapping, Protocol, Sequence
 
+try:
+    from emotionInterface import IHomeostasis
+    from emotionalContract import HomeostasisDTO
+except ImportError:
+    try:
+        from .emotionInterface import IHomeostasis
+        from .emotionalContract import HomeostasisDTO
+    except ImportError:
+        from src.brain.emotionalHandlerAndStore.emotionInterface import IHomeostasis
+        from src.brain.emotionalHandlerAndStore.emotionalContract import HomeostasisDTO
+
+
 
 #============CONSTANTS===============
 MIN_NORMALIZED_VALUE = 0.0
@@ -522,3 +534,54 @@ class HomeostasisEngine:
             ),
         )
         return GraphDynamics(nodes=nodes, edges=edges)
+
+
+class Homeostasis(IHomeostasis):
+    """Adapter class wrapping HomeostasisEngine to implement IHomeostasis."""
+
+    def __init__(self, engine: HomeostasisEngine | None = None) -> None:
+        self.engine = engine if engine is not None else HomeostasisEngine()
+
+    def current_state(self) -> HomeostasisDTO:
+        state = self.engine.get_state()
+        return HomeostasisDTO(
+            fatigue=1.0 - state.value(HomeostasisVariable.ENERGY),
+            stress=state.value(HomeostasisVariable.STRESS),
+            cognitive_load=state.value(HomeostasisVariable.COGNITIVE_LOAD),
+            focus=1.0 - state.value(HomeostasisVariable.COGNITIVE_LOAD),
+            curiosity_drive=state.value(HomeostasisVariable.CURIOSITY),
+            novelty_hunger=state.value(HomeostasisVariable.CURIOSITY),
+            reward_satisfaction=1.0 - state.value(HomeostasisVariable.STRESS),
+            social_need=state.value(HomeostasisVariable.SOCIAL_NEED),
+            stability_score=1.0 - state.value(HomeostasisVariable.METASTABILITY),
+            timestamp=state.last_updated,
+        )
+
+    def update(self, appraisal: Any, emotion: Any) -> HomeostasisDTO:
+        perturbation = {}
+        if hasattr(appraisal, "threat"):
+            perturbation[HomeostasisVariable.STRESS.value] = 0.15 * float(appraisal.threat)
+        if hasattr(appraisal, "reward"):
+            perturbation[HomeostasisVariable.ENERGY.value] = 0.1 * float(appraisal.reward)
+            perturbation[HomeostasisVariable.STRESS.value] = perturbation.get(HomeostasisVariable.STRESS.value, 0.0) - 0.1 * float(appraisal.reward)
+        if hasattr(appraisal, "urgency"):
+            perturbation[HomeostasisVariable.COGNITIVE_LOAD.value] = 0.1 * float(appraisal.urgency)
+        if hasattr(emotion, "curiosity"):
+            perturbation[HomeostasisVariable.CURIOSITY.value] = 0.05 * float(emotion.curiosity)
+
+        class AppraisalEmotionInput:
+            def __init__(self, pert: dict[str, float]) -> None:
+                self.pert = pert
+            def perturbations(self, state: HomeostasisState) -> dict[str, float]:
+                return self.pert
+
+        inputs = [AppraisalEmotionInput(perturbation)]
+        self.engine.evolve(inputs)
+        return self.current_state()
+
+    def restore(self) -> None:
+        pass
+
+    def reset(self) -> None:
+        self.engine.reset()
+
