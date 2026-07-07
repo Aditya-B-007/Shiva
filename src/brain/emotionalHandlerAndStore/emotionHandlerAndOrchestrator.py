@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from emotionInterface import (
     IAppraisal,
     IEmotionDynamics,
+    IHomeostasis,
     IHomeostasis,
     IEmotionalMemoryTagger,
     IDreamEngine,
@@ -10,29 +13,15 @@ from emotionInterface import (
     IForgettingEngine,
     IIdentityReinforcement,
     ISleepController,
-    IEmotionDatabase
+    IEmotionDatabase # type: ignore
 )
-"""
-emotion/
-│
-├── EmotionalOrchestrator.py
-│
-├── EmotionInterfaces.py
-│
-├── AppraisalEngine.py
-├── EmotionDynamicsEngine.py
-├── HomeostasisEngine.py
-├── EmotionalMemoryTagger.py
-├── DreamEngine.py
-├── MemoryConsolidator.py
-├── ForgettingEngine.py
-├── IdentityReinforcement.py
-├── SleepController.py
-│
-├── EmotionStorage.py
-│
-└── __init__.py
-"""
+try:
+    from src.brain.memory import MemoryEngine
+except ImportError:
+    try:
+        from brain.memory import MemoryEngine
+    except ImportError:
+        from memory import MemoryEngine
 
 class EmotionalOrchestrator:
 
@@ -52,6 +41,7 @@ class EmotionalOrchestrator:
         identity_engine: IIdentityReinforcement,
         sleep_controller: ISleepController,
         database: IEmotionDatabase,
+        memory_engine: MemoryEngine | None = None,
     ):
 
         self._appraisal = appraisal_engine
@@ -64,6 +54,7 @@ class EmotionalOrchestrator:
         self._identity = identity_engine
         self._sleep = sleep_controller
         self._database = database
+        self._memory_engine = memory_engine
 
     ##########################################################################
     # Runtime
@@ -76,6 +67,13 @@ class EmotionalOrchestrator:
         homeostasis = self._homeostasis.update(appraisal,emotion)
         memory = self._memory.create_memory(event,appraisal,emotion,homeostasis)
         self._database.store_memory(memory)
+        if self._memory_engine is not None:
+            self._memory_engine.store(
+                perception=event,
+                emotion=emotion,
+                homeostasis=homeostasis,
+                context=self._memory_context(event, appraisal),
+            )
         return emotion
 
     ##########################################################################
@@ -100,6 +98,8 @@ class EmotionalOrchestrator:
 
     def retrieve_memory(self, query):
 
+        if self._memory_engine is not None:
+            return self._memory_engine.retrieve(query)
         return self._database.retrieve(query)
 
     ##########################################################################
@@ -109,6 +109,8 @@ class EmotionalOrchestrator:
     def enter_sleep(self):
 
         self._sleep.begin_sleep()
+        if self._memory_engine is not None:
+            self._memory_engine.sleep()
         replay = self._dream.generate()
         consolidated = self._consolidator.consolidate(replay)
         self._identity.reinforce(consolidated)
@@ -123,6 +125,8 @@ class EmotionalOrchestrator:
     def wake(self):
 
         self._database.open()
+        if self._memory_engine is not None:
+            self._memory_engine.load()
 
         self._emotion.restore()
 
@@ -136,6 +140,8 @@ class EmotionalOrchestrator:
 
     def save(self):
 
+        if self._memory_engine is not None:
+            self._memory_engine.save()
         self._database.commit()
 
     def close(self):
@@ -153,3 +159,16 @@ class EmotionalOrchestrator:
         self._homeostasis.reset()
 
         self._identity.reset()
+
+    def _memory_context(self, event: Any, appraisal: Any) -> dict[str, Any]:
+        context: dict[str, Any] = {}
+        if hasattr(event, "event_type"):
+            context["event_type"] = str(getattr(event, "event_type"))
+        if hasattr(event, "source"):
+            context["source"] = getattr(event, "source")
+        if hasattr(event, "metadata") and isinstance(getattr(event, "metadata"), dict):
+            context.update(getattr(event, "metadata"))
+        for field_name in ("importance", "goal_relevance"):
+            if hasattr(appraisal, field_name):
+                context[field_name] = getattr(appraisal, field_name)
+        return context
