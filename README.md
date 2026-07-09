@@ -87,7 +87,7 @@ Biological intelligence does not emerge from a single algorithm, but through the
 Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Cognitive Science, and Robotics. 
 
 ## License
-Released under the MIT License.
+Released under the Apache 2.0 license .
 
 ---
 **Intelligence is more than prediction. It is perception, regulation, memory, adaptation, and action.**
