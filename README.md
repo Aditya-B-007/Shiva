@@ -5,7 +5,7 @@
 
 *"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, and acts."*
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-green.svg)
 ![Status](https://img.shields.io/badge/status-active%20development-orange.svg)
 ![Research](https://img.shields.io/badge/research-cognitive%20AI-purple.svg)
