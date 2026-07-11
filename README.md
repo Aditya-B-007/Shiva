@@ -14,72 +14,293 @@
 ---
 
 ![shiva ai](https://github.com/user-attachments/assets/24f134a5-aae8-4044-879a-ae0c431e08b4)
+# Why Shiva?
 
-## Why Shiva?
-Artificial Intelligence has made tremendous progress in language understanding, image generation, and reasoning. While Large Language Models (LLMs) can write software and converse fluently, they remain fundamentally **reactive**.
+Artificial Intelligence has made remarkable progress in language understanding, reasoning, vision, and code generation. Modern Large Language Models (LLMs) can solve complex problems, write software, and interact with humans in increasingly natural ways. Despite these advances, nearly all current AI systems remain fundamentally **reactive**.
 
-They generate outputs conditioned on inputs, but they lack a continuously evolving internal cognitive state. They do not regulate themselves, possess intrinsic motivations, or maintain physiological balance. Most AI today behaves like an intelligent calculator rather than an autonomous cognitive agent. Shiva.ai is designed to explore a different direction.
+They generate responses conditioned on inputs but do not continuously perceive their environment, regulate internal cognitive processes, maintain persistent identity, or autonomously decide what deserves attention. Memory is typically implemented as retrieval over stored embeddings, planning is often prompt-driven, and reasoning begins only after a user request.
 
-## The Problem
-Today's AI systems generally consist of a single reasoning engine surrounded by tools:
+Shiva explores a fundamentally different direction.
 
-`Input` → `Large Language Model` → `Output`
+Rather than building another language model, Shiva aims to build a **Cognitive Operating System (Cognitive OS)** capable of continuously perceiving, reasoning, remembering, planning, and acting across multiple domains.
 
-In this paradigm, memory is often implemented as simple vector retrieval, planning is reduced to prompt engineering, and internal regulation is absent. Identity disappears after every interaction. The challenge is no longer just answering questions; the challenge is building AI that can **maintain itself**.
+---
 
-## Our Approach
-Shiva models intelligence as a **cognitive control system** rather than a sequence prediction problem. Every action emerges from the continuous interaction of:
-* **Perception**
-* **Internal State**
-* **Emotional Appraisal**
-* **Homeostasis**
-* **Memory**
-* **Planning**
-* **Decision Making**
+# The Problem
 
-This creates an agent whose behavior evolves over time, forming a closed cognitive feedback loop where memory changes emotion, emotion changes attention, and attention changes planning.
+Most AI systems today can be simplified as:
 
-## Cognitive Pipeline
-```mermaid
-graph TD
-    Env[Environment] --> Perception[Multi-Modal Perception]
-    Perception --> Latent[Universal Latent Space]
-    Latent --> Emotional[Emotional Appraisal]
-    Latent --> Memory[Episodic Memory]
-    Emotional --> Homeostasis[Homeostasis]
-    Memory --> Identity[Narrative Identity]
-    Homeostasis --> Planning[Action Planning]
-    Identity --> Planning
-    Planning --> Policy[Reinforcement Policy]
-    Policy --> Actions[Actions]
-    Actions --> State[Updated State]
+```text
+Input
+   │
+   ▼
+Large Language Model
+   │
+   ▼
+Output
 ```
 
-## Design Philosophy
-Biological intelligence does not emerge from a single algorithm, but through the interaction of specialized systems. Our principles include:
-* **Intelligence is an action-selection problem.**
-* **Memory must influence future behavior.**
-* **Emotion is an adaptive computational signal.**
-* **Internal regulation is necessary for stability.**
-* **Learning must be continuous and modular.**
+While powerful, this architecture assumes intelligence begins with a prompt and ends with a response.
 
-## Core Concepts
-* **Universal Latent Space:** Projects heterogeneous data (Text, Vision, Robotics, etc.) into a shared representation ($z \in \mathbb{R}^{512}$), allowing domain-agnostic reasoning.
-* **Emotional Appraisal:** Emotions act as computational signals representing the significance of events, dynamically influencing attention and learning priority.
-* **Homeostasis:** An internal model monitoring variables like *Energy*, *Arousal*, and *Safety* to maintain stability while pursuing goals.
-* **Episodic Memory:** Stores experiences based on emotional salience and novelty, forming a persistent narrative identity.
-* **Dual Policy Reinforcement Learning:** Employs multiple expert policies, dynamically blended based on the agent's internal state.
+Real-world autonomous systems do not function this way.
 
-## Tech Stack
-* **Deep Learning:** Transformers, Contrastive Learning, Hypernetwork Gating.
-* **Reinforcement Learning:** Soft Actor-Critic (SAC), Prioritized Experience Replay.
-* **Distributed Intelligence:** Swarm Cognition, Model Migration, Parameter Frankenmerging.
+A robot, smartphone assistant, autonomous vehicle, or embodied AI must continuously:
 
-## Roadmap
-* **Phase 1: Foundation (Complete)** — Transformer backbone, multi-modal alignment.
-* **Phase 2: Decision Making (Complete)** — Dual Actor SAC, experience replay.
-* **Phase 3: Cognitive Layer (Complete)** — Emotion, Homeostasis, Memory.
-* **Phase 4: Autonomous Intelligence (In Progress)** — Long-horizon planning, multi-agent collaboration.
+- Perceive the environment.
+- Maintain an internal cognitive state.
+- Remember previous experiences.
+- Regulate competing objectives.
+- Collaborate across multiple cognitive processes.
+- Decide when and how to act without explicit instructions.
+
+The challenge is no longer building a model that answers questions.
+
+The challenge is building software that can **continuously think**.
+
+---
+
+# Our Approach
+
+Shiva models intelligence as a **distributed Cognitive Operating System** rather than a monolithic neural network.
+
+Instead of placing a Large Language Model at the center of the architecture, Shiva decomposes cognition into specialized systems responsible for distinct aspects of intelligence.
+
+These systems include:
+
+- Multi-modal Perception
+- Semantic Understanding
+- Emotion
+- Homeostasis
+- Memory
+- Working Memory
+- Identity
+- Planning
+- Decision Making
+- Tool Execution
+
+Each subsystem evolves independently while cooperating through a shared cognitive runtime.
+
+The language model is **not the brain**.
+
+It is a **reasoning engine** used by the cognitive system whenever probabilistic inference or language generation is required.
+
+---
+
+# Cognitive Architecture
+
+```text
+                    Environment
+                          │
+                          ▼
+                 Multi-Modal Perception
+          (Text • Vision • Audio • Sensors)
+                          │
+                          ▼
+               Semantic Understanding
+                      (BERT)
+                          │
+                          ▼
+              Orchestration & Event System
+                          │
+          ┌───────────────┴───────────────┐
+          ▼                               ▼
+      Cognitive Swarm             Environment Interface
+   (Multiple Cognitive Nodes)
+          │
+          ▼
+  Emotion • Memory • Scratchpad
+  Identity • Planning • Goals
+          │
+          ▼
+ Shared Working Memory & Coordination
+          │
+          ▼
+      Reasoning Engine
+ (SmolLM2 / Frankenmerged Models)
+          │
+          ▼
+ Tool Selection & Action Execution
+          │
+          ▼
+ Updated Internal Cognitive State
+```
+
+---
+
+# Design Philosophy
+
+Shiva is built on the belief that intelligence emerges from the interaction of specialized systems rather than from a single algorithm.
+
+Our design principles are:
+
+- Intelligence is a continuous process, not a prompt-response cycle.
+- Cognition should be modular and independently evolvable.
+- Memory must influence future behaviour.
+- Emotion is an adaptive computational signal rather than a human simulation.
+- Working memory and long-term memory are fundamentally different.
+- Internal regulation is necessary for stable autonomous behaviour.
+- Large Language Models are reasoning engines—not complete cognitive architectures.
+
+---
+
+# Core Concepts
+
+### Cognitive Operating System
+
+Shiva is designed as an operating system for cognition rather than a conversational assistant. It continuously processes events, manages internal state, schedules cognitive processes, and coordinates perception, reasoning, memory, and action.
+
+---
+
+### Cognitive Swarm
+
+Instead of relying on a single monolithic controller, Shiva distributes cognition across multiple autonomous cognitive nodes.
+
+Each node maintains its own local:
+
+- Emotional State
+- Memory Access
+- Scratchpad
+- Planning Process
+- Cognitive Executive
+
+Collective intelligence emerges through cooperation between these nodes.
+
+---
+
+### Emotion & Homeostasis
+
+Emotion is treated as a computational mechanism that regulates:
+
+- Attention
+- Learning Priority
+- Memory Formation
+- Decision Bias
+- Resource Allocation
+
+Homeostasis continuously monitors internal variables such as energy, safety, stress, and cognitive load to maintain stable behaviour.
+
+---
+
+### Persistent Memory
+
+Shiva separates memory into multiple layers:
+
+- Working Memory
+- Episodic Memory
+- Semantic Memory
+- Narrative Identity
+
+Rather than storing every interaction, memories are consolidated based on emotional salience, novelty, and long-term utility.
+
+---
+
+### Shared Reasoning Engine
+
+The reasoning engine performs probabilistic inference and language generation using open-weight language models.
+
+Current implementation targets:
+
+- SmolLM2
+
+Future versions aim to support:
+
+- Dynamic Model Migration
+- Online Frankenmerging
+- Specialized Reasoning Models
+
+---
+
+### Embodied Intelligence
+
+Shiva is designed to operate directly on physical devices.
+
+When installed on a smartphone, tablet, robot, or embedded platform, existing hardware becomes part of the cognitive system.
+
+For example:
+
+- Camera → Vision
+- Microphone → Hearing
+- GPS → Spatial Awareness
+- Accelerometer → Balance
+- Storage → Long-Term Memory
+- Applications → Effectors
+
+Rather than controlling a device through isolated API calls, Shiva treats the device itself as the body of an autonomous cognitive agent.
+
+---
+
+# Technology Stack
+
+### Perception
+
+- BERT
+- Vision Encoders
+- Audio Encoders
+
+### Cognition
+
+- Emotional Appraisal
+- Homeostasis
+- Memory Graphs
+- Scratchpad Reasoning
+- Swarm Cognition
+
+### Reasoning
+
+- SmolLM2
+- Frankenmerged Language Models
+
+### Reinforcement Learning
+
+- Soft Actor-Critic (SAC)
+- Prioritized Experience Replay
+- Multi-Agent Reinforcement Learning
+
+### Infrastructure
+
+- PyTorch
+- SQLite
+- Plugin-Based Cognitive Runtime
+- Distributed Swarm Architecture
+
+---
+
+# Roadmap
+
+### Phase 1 — Foundations *(Complete)*
+
+- Emotion Engine
+- Homeostasis
+- Memory System
+
+### Phase 2 — Cognitive Runtime *(In Progress)*
+
+- Cognitive Swarm
+- Shared Reasoning Engine
+- Scratchpad Coordination
+- Tool Execution Framework
+
+### Phase 3 — Embodied Intelligence
+
+- Smartphone Runtime
+- Robotics Integration
+- Continuous Background Cognition
+- Multi-modal Perception
+
+### Phase 4 — Distributed Intelligence
+
+- Multi-device Cognition
+- Online Frankenmerging
+- Model Migration
+- Distributed Memory Synchronization
+
+---
+
+# Mission
+
+> **Shiva is not another AI assistant built around a language model. It is a Cognitive Operating System that transforms existing hardware into autonomous cognitive agents capable of continuously perceiving, reasoning, remembering, planning, and acting.**
+
+<img width="1063" height="874" alt="Screenshot 2026-07-11 at 5 52 18 PM" src="https://github.com/user-attachments/assets/cfa2c0ba-59d0-4cf4-85e2-cd883b86709d" />
 
 ---
 
