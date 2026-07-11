@@ -36,7 +36,7 @@ class Decoder(nn.Module):
             tensor_input = vector_input.float().to(self.device)
             
         if tensor_input.ndim == 2:
-            tensor_input = tensor_input.unsqueeze(1) # [batch, 1, input_dim]
+            tensor_input = tensor_input.unsqueeze(1)
             
         current_input_dim = tensor_input.shape[-1]
         target_dim = self.model.config.hidden_size
@@ -75,9 +75,6 @@ class Decoder(nn.Module):
         )
 
     def generateDecision(self, context: ReasoningContextDTO, max_new_tokens: int = 128, **kwargs) -> ThoughtDTO:
-        """
-        Formats the current ReasoningContextDTO into a prompt and generates a single ThoughtDTO step.
-        """
         prompt_parts = [
             "<|im_start|>system",
             "You are the cognitive reasoning engine of a Shiva node.",
