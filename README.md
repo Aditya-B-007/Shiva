@@ -300,7 +300,8 @@ Rather than controlling a device through isolated API calls, Shiva treats the de
 
 > **Shiva is not another AI assistant built around a language model. It is a Cognitive Operating System that transforms existing hardware into autonomous cognitive agents capable of continuously perceiving, reasoning, remembering, planning, and acting.**
 
-<img width="1063" height="874" alt="Screenshot 2026-07-11 at 5 52 18 PM" src="https://github.com/user-attachments/assets/cfa2c0ba-59d0-4cf4-85e2-cd883b86709d" />
+<img width="1051" height="881" alt="Screenshot 2026-07-11 at 11 25 46 PM" src="https://github.com/user-attachments/assets/e3c32e2a-2f01-403a-a807-db6fe3b56d0a" />
+
 
 ---
 
