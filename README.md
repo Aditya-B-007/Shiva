@@ -89,42 +89,7 @@ It is a **reasoning engine** used by the cognitive system whenever probabilistic
 
 # Cognitive Architecture
 
-```text
-                    Environment
-                          │
-                          ▼
-                 Multi-Modal Perception
-          (Text • Vision • Audio • Sensors)
-                          │
-                          ▼
-               Semantic Understanding
-                      (BERT)
-                          │
-                          ▼
-              Orchestration & Event System
-                          │
-          ┌───────────────┴───────────────┐
-          ▼                               ▼
-      Cognitive Swarm             Environment Interface
-   (Multiple Cognitive Nodes)
-          │
-          ▼
-  Emotion • Memory • Scratchpad
-  Identity • Planning • Goals
-          │
-          ▼
- Shared Working Memory & Coordination
-          │
-          ▼
-      Reasoning Engine
- (SmolLM2 / Frankenmerged Models)
-          │
-          ▼
- Tool Selection & Action Execution
-          │
-          ▼
- Updated Internal Cognitive State
-```
+<img width="1051" height="881" alt="Screenshot 2026-07-11 at 11 25 46 PM" src="https://github.com/user-attachments/assets/e3c32e2a-2f01-403a-a807-db6fe3b56d0a" />
 
 ---
 
@@ -300,8 +265,6 @@ Rather than controlling a device through isolated API calls, Shiva treats the de
 # Mission
 
 > **Shiva is not another AI assistant built around a language model. It is a Cognitive Operating System that transforms existing hardware into autonomous cognitive agents capable of continuously perceiving, reasoning, remembering, planning, and acting.**
-
-<img width="1051" height="881" alt="Screenshot 2026-07-11 at 11 25 46 PM" src="https://github.com/user-attachments/assets/e3c32e2a-2f01-403a-a807-db6fe3b56d0a" />
 
 
 ---
