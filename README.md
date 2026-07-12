@@ -11,7 +11,8 @@
 ![Research](https://img.shields.io/badge/research-cognitive%20AI-purple.svg)
 
 </div>
----
+
+
 
 ![shiva ai](https://github.com/user-attachments/assets/24f134a5-aae8-4044-879a-ae0c431e08b4)
 # Why Shiva?
