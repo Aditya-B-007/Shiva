@@ -6,8 +6,10 @@ from datetime import datetime
 @dataclass(slots=True)
 class ThoughtDTO:
     raw_text: str
+    thought_body: str
+    critique: str
+    confidence: float
     parsed_decision: Optional[str] = None
-    confidence: float = 0.0
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 @dataclass(slots=True)

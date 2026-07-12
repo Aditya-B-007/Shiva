@@ -15,13 +15,30 @@ class DefaultGoalEvaluator(IGoalEvaluator):
             return True
         return False
 
+class MetacognitiveGoalEvaluator(IGoalEvaluator):
+    def __init__(self, confidence_threshold: float = 0.85):
+        self.confidence_threshold = confidence_threshold
+
+    def evaluate(self, last_thought: ThoughtDTO, scratchpad: Any) -> bool:
+        if last_thought.parsed_decision is not None:
+            if last_thought.confidence >= self.confidence_threshold:
+                scratchpad.set_decision(last_thought.parsed_decision, last_thought.confidence)
+                return True
+            else:
+                scratchpad.update_context("reflection_warning", "Decision proposed but confidence is too low.")
+                
+        if "wrong" in last_thought.critique.lower() or "contradict" in last_thought.critique.lower():
+            scratchpad.update_context("correction_needed", True)
+            
+        return False
+
 
 @dataclass
 class ChainOfThought:
 
     max_iterations: int = 5
 
-    goal_evaluator: IGoalEvaluator = field(default_factory=DefaultGoalEvaluator)
+    goal_evaluator: IGoalEvaluator = field(default_factory=MetacognitiveGoalEvaluator)
 
     current_iteration: int = 0
 

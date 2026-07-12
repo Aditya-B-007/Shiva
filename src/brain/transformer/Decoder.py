@@ -75,42 +75,46 @@ class Decoder(nn.Module):
         )
 
     def generateDecision(self, context: ReasoningContextDTO, max_new_tokens: int = 128, **kwargs) -> ThoughtDTO:
-        prompt_parts = [
-            "<|im_start|>system",
-            "You are the cognitive reasoning engine of a Shiva node.",
-            "Your goal is to evaluate the perception, memories, and emotions, and generate the next logical thought.",
-            "Keep your thought concise and focused. Do not repeat previous thoughts.",
-            "When you have arrived at a final decision and confidence, write: 'DECISION: <final decision> | CONFIDENCE: <0.0 to 1.0>'",
-            "<|im_end|>",
-            "<|im_start|>user",
-            f"Perception: {context.perception}"
-        ]
-        
+        # Build user prompt
+        user_parts = [f"Perception: {context.perception}"]
         if context.emotion:
-            prompt_parts.append(f"Current Emotion: {context.emotion}")
+            user_parts.append(f"Current Emotion: {context.emotion}")
             
         if context.memories:
-            prompt_parts.append("Retrieved Memories:")
+            user_parts.append("Retrieved Memories:")
             for m in context.memories:
                 content = getattr(m, "raw_content", str(m))
                 summary = getattr(m, "summary", "")
-                prompt_parts.append(f"- {summary if summary else content}")
+                user_parts.append(f"- {summary if summary else content}")
                 
         if context.hypotheses:
-            prompt_parts.append(f"Current Hypotheses: {context.hypotheses}")
+            user_parts.append(f"Current Hypotheses: {context.hypotheses}")
             
         if context.thoughts:
-            prompt_parts.append("Previous Thoughts:")
+            user_parts.append("Previous Thoughts:")
             for t in context.thoughts:
-                prompt_parts.append(f"- {t.raw_text}")
+                user_parts.append(f"- THOUGHT: {t.thought_body}\n  CRITIQUE: {t.critique}\n  CONFIDENCE: {t.confidence}")
                 
-        prompt_parts.extend([
-            "Generate the next thought:",
-            "<|im_end|>",
-            "<|im_start|>assistant"
-        ])
+        user_parts.append("Generate the next thought, critique, and confidence:")
+        user_content = "\n".join(user_parts)
         
-        prompt = "\n".join(prompt_parts)
+        # System instructions
+        system_content = (
+            "You are the cognitive reasoning engine of a Shiva node. "
+            "You must engage in active self-reflection. For each thought step, you must think and output EXACTLY in this format:\n"
+            "THOUGHT: <your reasoning/thought>\n"
+            "CRITIQUE: <your critique of why this might be wrong or what you missed>\n"
+            "CONFIDENCE: <your self-reflected confidence between 0.0 and 1.0>\n\n"
+            "If you are ready to make a final decision, append 'DECISION: <your decision>' at the end."
+        )
+        
+        # Format using the model's native chat template
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
+        ]
+        
+        prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         
         with torch.no_grad():
@@ -129,18 +133,46 @@ class Decoder(nn.Module):
         generated_tokens = outputs[0][input_len:]
         raw_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
         
-        # Simple heuristic parser for closing the loop
-        parsed_decision = None
+        # Parse the structured self-reflection
+        thought_body = ""
+        critique = ""
         confidence = 0.0
-        if "DECISION:" in raw_text:
+        parsed_decision = None
+        
+        if "THOUGHT:" in raw_text:
             try:
-                parts = raw_text.split("DECISION:")[-1].split("|")
-                parsed_decision = parts[0].strip()
-                if len(parts) > 1 and "CONFIDENCE:" in parts[1]:
-                    confidence = float(parts[1].split("CONFIDENCE:")[-1].strip())
-                else:
-                    confidence = 1.0
+                thought_body = raw_text.split("THOUGHT:")[-1].split("CRITIQUE:")[0].strip()
+            except Exception:
+                thought_body = raw_text
+        else:
+            thought_body = raw_text
+            
+        if "CRITIQUE:" in raw_text:
+            try:
+                critique = raw_text.split("CRITIQUE:")[-1].split("CONFIDENCE:")[0].strip()
             except Exception:
                 pass
                 
-        return ThoughtDTO(raw_text=raw_text, parsed_decision=parsed_decision, confidence=confidence)
+        if "CONFIDENCE:" in raw_text:
+            try:
+                conf_str = raw_text.split("CONFIDENCE:")[-1].split("DECISION:")[0].strip()
+                import re
+                match = re.search(r"[-+]?\d*\.\d+|\d+", conf_str)
+                if match:
+                    confidence = float(match.group(0))
+            except Exception:
+                pass
+                
+        if "DECISION:" in raw_text:
+            try:
+                parsed_decision = raw_text.split("DECISION:")[-1].strip()
+            except Exception:
+                pass
+                
+        return ThoughtDTO(
+            raw_text=raw_text,
+            thought_body=thought_body,
+            critique=critique,
+            confidence=confidence,
+            parsed_decision=parsed_decision
+        )
