@@ -42,13 +42,33 @@ except ImportError:
     except ImportError:
         from src.transferDTO import Tokens, TokenBundle, Latent
 
+from dataclasses import dataclass
+
+@dataclass
+class TransformerConfig:
+    vocab_size: int = 32000
+    max_sequence_length: int = 2048
+    vector_size: int = 2048
+    num_heads: int = 8
+    num_layers: int = 18
+    feed_forward_dimension: int = 8192
+    dropout: float = 0.1
+    device: str = "cpu"
+    dtype: str = "float16"
+    positional_encoding: str = "rope" 
+    rope_theta: float = 10000.0
+
+    @classmethod
+    def from_env(cls):
+        return cls()
+
 try:
-    from transformerArchitecture import TransformerConfig, Encoder
+    from src.brain.transformer.Encoder import Encoder
 except ImportError:
     try:
-        from ..transformerArchitecture import TransformerConfig, Encoder
+        from ..transformer.Encoder import Encoder
     except ImportError:
-        from src.brain.transformerArchitecture import TransformerConfig, Encoder
+        from transformer.Encoder import Encoder
 
 
 #============CONSTANTS===============
@@ -452,11 +472,19 @@ class CognitiveStateEncoder(nn.Module):
     def __init__(self, config: Optional[TransformerConfig] = None):
         super().__init__()
         self.config = config or TransformerConfig.from_env()
-        self.encoder = Encoder(self.config)
-        self.cls_token = nn.Parameter(torch.randn(1, 1, self.config.vector_size) * 0.02)
+        self.encoder = Encoder()
+        device = self.encoder.device
+        
+        self.vector_size = self.config.vector_size
+        self.bert_dim = self.encoder.model.config.hidden_size
+        
+        self.proj_in = nn.Linear(self.vector_size, self.bert_dim).to(device)
+        self.proj_out = nn.Linear(self.bert_dim, self.vector_size).to(device)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, self.bert_dim).to(device) * 0.02)
 
     def _learn_relationships(self, x: torch.Tensor) -> torch.Tensor:
-        return self.encoder(x)
+        raw_outputs = self.encoder.process(x)
+        return raw_outputs.last_hidden_state
 
     def _produce_latent(self, x: torch.Tensor, feature_names: List[str]) -> Latent:
         vector = x[:, 0]
@@ -469,11 +497,19 @@ class CognitiveStateEncoder(nn.Module):
     def encode(self, token_sequence: TokenBundle) -> Latent:
         x = token_sequence.tensor
         batch_size = x.size(0)
+        
+        # Project vector_size to BERT hidden_size (768)
+        x_projected = self.proj_in(x)
+        
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-        x_with_cls = torch.cat([cls_tokens, x], dim=1)
+        x_with_cls = torch.cat([cls_tokens, x_projected], dim=1)
         
         encoded_seq = self._learn_relationships(x_with_cls)
-        return self._produce_latent(encoded_seq, token_sequence.names)
+        
+        # Project BERT outputs back to vector_size
+        encoded_seq_projected = self.proj_out(encoded_seq)
+        
+        return self._produce_latent(encoded_seq_projected, token_sequence.names)
 
 
 class AppraisalNetwork(nn.Module):
