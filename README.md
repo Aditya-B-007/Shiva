@@ -1,7 +1,7 @@
 <div align="center">
 
 # shiva.ai
-### An Open-Source Cognitive Architecture for Autonomous AI Systems
+### An Open-Source physical AI.
 
 *"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, and acts."*
 
