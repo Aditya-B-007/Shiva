@@ -1,0 +1,56 @@
+// src/packaging/android/build.gradle
+// Template configuration to incorporate Shiva Python sources and requirements in an Android Studio project via Chaquopy.
+
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python' // Apply the Chaquopy plugin
+}
+
+android {
+    namespace 'com.shiva.ai'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.shiva.ai"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        ndk {
+            // Filter NDK architectures supported by Python binary modules
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
+
+        python {
+            // Specify Python environment version
+            version "3.10"
+
+            pip {
+                // List dependencies required on Android.
+                // Note: Chaquopy downloads corresponding precompiled Android wheels.
+                install "numpy==1.24.0"
+                install "scipy==1.10.0"
+                install "Pillow==9.5.0"
+                
+                // Pure-python dependency libraries
+                install "pyperclip==1.8.2"
+                install "psutil==5.9.0"
+            }
+        }
+    }
+
+    sourceSets {
+        main {
+            python {
+                // Point source directory to your python module root
+                srcDirs = ["../../../src"]
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+}
