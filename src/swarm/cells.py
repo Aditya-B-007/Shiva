@@ -4,6 +4,8 @@ from src.brain.node.nodeDTOs import ThoughtDTO, NodeReasoningResultDTO
 from src.brain.node.scratchPad import ScratchPad
 from src.brain.node.chainOfThought import ChainOfThought
 from src.brain.node.nodeProcessingEngine import nodeProcessingEngine
+from src.body.perception.perceptionDTOs import PerceptionBundleDTO
+from src.body.perception.perceptionFormatter import PerceptionPromptFormatter
 
 class CorticalColumn(ABC):
     def __init__(self, column_id: int, memory_engine: Any, emotion_handler: Any, scheduler: Any):
@@ -23,6 +25,7 @@ class CorticalColumn(ABC):
             chain_of_thought=self.chain,
             reasoning_scheduler=self.scheduler
         )
+        self.perception_formatter = PerceptionPromptFormatter()
 
     @property
     @abstractmethod
@@ -44,48 +47,32 @@ class CorticalColumn(ABC):
         """
         Define memory and emotion retrieval priorities specific to this column.
         """
-        raw = self.memory.retrieve(perception, limit=3)
+        raw = self.memory.retrieve(self._memory_query(perception), limit=3)
         return list(getattr(raw, "memories", raw))
 
     def activate(self, perception: Any, working_history: List[ThoughtDTO] = None) -> NodeReasoningResultDTO:
-        # Pre-load context and execute node loop
-        memories = self.retrieve_context(perception)
-        
-        self.scratchpad.clear()
-        self.chain.reset()
-        
-        # Format structured sensory observations nicely for the reasoning workspace
-        if isinstance(perception, dict) and "observations" in perception:
-            obs_list = []
-            for dev, val in perception["observations"].items():
-                # Present a clean preview representing the raw observation data
-                if isinstance(val, bytes):
-                    preview = f"<Raw Bytes: Length {len(val)}>"
-                else:
-                    preview = str(val)
-                obs_list.append(f"- {dev}: {preview}")
-            
-            obs_str = "\n".join(obs_list)
-            formatted_perception = (
-                f"Query/Problem: {perception.get('query')}\n"
-                f"Current Sensory Observations:\n{obs_str}"
-            )
+        formatted_perception = self._format_for_reasoning(perception)
+        return self.engine.process(
+            formatted_perception,
+            seed_thoughts=working_history or [],
+            memories=self.retrieve_context(perception)
+        )
+
+    def _format_for_reasoning(self, perception: Any) -> str:
+        if isinstance(perception, PerceptionBundleDTO):
+            formatted_perception = self.perception_formatter.format_bundle(perception)
         else:
             formatted_perception = str(perception)
-        
-        # Format the sensory input alongside the column's specialized system prompt
-        self.scratchpad.initialize(
-            perception=f"[Specialty Instruction: {self.system_prompt}] Perception:\n{formatted_perception}",
-            memory=memories,
-            emotion=self.emotion.current_emotion() if hasattr(self.emotion, "current_emotion") else None
+
+        return (
+            f"Specialty Instruction: {self.system_prompt}\n"
+            f"{formatted_perception}"
         )
-        
-        if working_history:
-            for t in working_history:
-                self.scratchpad.append_thought(t)
-                
-        # Run node reasoning
-        return self.engine.process(formatted_perception)
+
+    def _memory_query(self, perception: Any) -> str:
+        if isinstance(perception, PerceptionBundleDTO):
+            return self.perception_formatter.format_bundle(perception)
+        return str(perception)
 
 
 

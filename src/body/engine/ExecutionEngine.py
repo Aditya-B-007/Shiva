@@ -1,6 +1,8 @@
 import time
 from typing import Any, Dict
 from ..registry.PerceptionRegistry import PerceptionRegistry
+from ..perception.perceptionDTOs import PerceptionObservationDTO
+from ..perception.perceptionFormatter import PerceptionObservationFactory
 
 class ExecutionEngine:
     """
@@ -10,6 +12,7 @@ class ExecutionEngine:
 
     def __init__(self, registry: PerceptionRegistry) -> None:
         self.registry = registry
+        self.observation_factory = PerceptionObservationFactory()
 
     def capture(self, device_name: str, **kwargs: Any) -> Any:
         """
@@ -21,6 +24,17 @@ class ExecutionEngine:
 
         self._validate_arguments(device, kwargs)
         return device.capture(**kwargs)
+
+    def capture_observation(self, device_name: str, **kwargs: Any) -> PerceptionObservationDTO:
+        """
+        Dispatches perception requests and returns a structured observation DTO.
+        Raw capture remains available through capture() for existing integrations.
+        """
+        try:
+            payload = self.capture(device_name, **kwargs)
+            return self.observation_factory.from_capture(device_name, payload)
+        except Exception as error:
+            return self.observation_factory.from_error(device_name, error)
 
     def _validate_arguments(self, device: Any, arguments: Dict[str, Any]) -> None:
         defs = device.parameter_definitions

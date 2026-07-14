@@ -1,6 +1,6 @@
 import threading
 from contextlib import contextmanager
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, List
 from src.brain.node.nodeDTOs import NodeReasoningResultDTO, ThoughtDTO, ReasoningContextDTO
 
 class ReasoningScheduler:
@@ -35,13 +35,19 @@ class nodeProcessingEngine:
         self._chain = chain_of_thought
         self._reasoning_scheduler = reasoning_scheduler
 
-    def process(self, perception: Any) -> NodeReasoningResultDTO:
+    def process(
+        self,
+        perception: Any,
+        seed_thoughts: List[ThoughtDTO] = None,
+        memories: List[Any] = None
+    ) -> NodeReasoningResultDTO:
         self._chain.reset()
         self._scratchpad.clear()
-        raw_memories = self._memory.retrieve(perception)
-        memories = getattr(raw_memories, "memories", raw_memories)
-        if not isinstance(memories, list) and isinstance(memories, tuple):
-            memories = list(memories)
+        if memories is None:
+            raw_memories = self._memory.retrieve(perception)
+            memories = getattr(raw_memories, "memories", raw_memories)
+            if not isinstance(memories, list) and isinstance(memories, tuple):
+                memories = list(memories)
         if hasattr(self._emotion, "perceive_event"):
             emotion = self._emotion.perceive_event(perception)
         elif hasattr(self._emotion, "process"):
@@ -56,6 +62,8 @@ class nodeProcessingEngine:
             memory=memories,
             emotion=emotion
         )
+        for thought in seed_thoughts or []:
+            self._scratchpad.append_thought(thought)
         while self._chain.should_continue():
             # Request one decoder time slice
             with self._reasoning_scheduler.acquire_decoder() as decoder:

@@ -1,8 +1,10 @@
 import math
-import numpy as np
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Iterable, Optional
 from src.swarm.cells import AnalyticalColumn, CreativeColumn, RiskColumn, VerificationColumn, CorticalColumn
 from src.brain.node.nodeDTOs import NodeReasoningResultDTO, ThoughtDTO
+from src.body.perception.perceptionDTOs import PerceptionBundleDTO, PerceptionCaptureRequestDTO, PerceptionObservationDTO
+from src.body.perception.perceptionFormatter import PerceptionObservationFactory, PerceptionPromptFormatter
+from src.swarm.swarmDTOs import MothershipResponseDTO
 
 class CognitiveStabilityRegulator:
     def __init__(self):
@@ -36,6 +38,8 @@ class Mothership:
         self.emotion = emotion_handler
         self.scheduler = scheduler
         self.execution_engine = execution_engine
+        self.observation_factory = PerceptionObservationFactory()
+        self.perception_formatter = PerceptionPromptFormatter()
         
         # Instability regulator
         self.stability_regulator = CognitiveStabilityRegulator()
@@ -62,26 +66,20 @@ class Mothership:
             
         return columns
 
-    def solve_problem(self, problem: str, max_cycles: int = 4, devices_to_query: List[str] = None) -> NodeReasoningResultDTO:
+    def solve_problem(
+        self,
+        problem: str,
+        max_cycles: int = 4,
+        devices_to_query: List[Any] = None
+    ) -> MothershipResponseDTO:
         working_thoughts: List[ThoughtDTO] = []
         best_overall_result = None
+        cycles_used = 0
 
-        # 0. Proactively capture observations from requested perception devices
-        observations: Dict[str, Any] = {}
-        if self.execution_engine and devices_to_query:
-            for device in devices_to_query:
-                try:
-                    observations[device] = self.execution_engine.capture(device)
-                except Exception as e:
-                    observations[device] = f"Error: {str(e)}"
-
-        # Bundle problem statement and perception data together
-        sensory_input = {
-            "query": problem,
-            "observations": observations
-        }
+        sensory_input = self._capture_perception_bundle(problem, devices_to_query)
 
         for cycle in range(max_cycles):
+            cycles_used = cycle + 1
             # 1. Prefrontal scheduling
             columns = self.arbitrate_columns(cycle)
             print(f"[Executive Cortex] Cycle {cycle+1}: Active Specialist Columns = {len(columns)}")
@@ -95,7 +93,7 @@ class Mothership:
             # 3. Calculate cognitive feedback signals for the stability regulator
             # Check average confidence of columns
             valid_results = [res for res in cycle_results if res.confidence > 0.0]
-            uncertainty = 1.0 - np.mean([res.confidence for res in valid_results]) if valid_results else 1.0
+            uncertainty = 1.0 - self._average([res.confidence for res in valid_results]) if valid_results else 1.0
             
             # Stress signal from the emotional orchestrator
             stress = 0.2
@@ -139,4 +137,85 @@ class Mothership:
                 print(f"[Executive Cortex] Convergence Detected in cycle {cycle+1}. Stopping reasoning.")
                 break
 
-        return best_overall_result
+        return self._build_response(sensory_input, best_overall_result, working_thoughts, cycles_used)
+
+    def _capture_perception_bundle(
+        self,
+        problem: str,
+        devices_to_query: Iterable[Any] = None
+    ) -> PerceptionBundleDTO:
+        bundle = PerceptionBundleDTO(query=problem)
+        if not self.execution_engine or not devices_to_query:
+            return bundle
+
+        for request in self._normalize_capture_requests(devices_to_query):
+            observation = self._capture_observation(request)
+            bundle.observations.append(observation)
+        return bundle
+
+    def _capture_observation(self, request: PerceptionCaptureRequestDTO) -> PerceptionObservationDTO:
+        if hasattr(self.execution_engine, "capture_observation"):
+            return self.execution_engine.capture_observation(request.device, **request.arguments)
+        try:
+            payload = self.execution_engine.capture(request.device, **request.arguments)
+            return self.observation_factory.from_capture(request.device, payload)
+        except Exception as error:
+            return self.observation_factory.from_error(request.device, error)
+
+    def _normalize_capture_requests(self, devices_to_query: Iterable[Any]) -> List[PerceptionCaptureRequestDTO]:
+        requests: List[PerceptionCaptureRequestDTO] = []
+        for item in devices_to_query:
+            if isinstance(item, PerceptionCaptureRequestDTO):
+                requests.append(item)
+            elif isinstance(item, str):
+                requests.append(PerceptionCaptureRequestDTO(device=item))
+            elif isinstance(item, dict):
+                device = item.get("device") or item.get("name")
+                if not device:
+                    raise ValueError("Perception capture request dictionaries require a 'device' or 'name' key.")
+                arguments = item.get("arguments") or item.get("kwargs") or {}
+                requests.append(PerceptionCaptureRequestDTO(device=device, arguments=dict(arguments)))
+            else:
+                raise TypeError(f"Unsupported perception capture request: {type(item).__name__}")
+        return requests
+
+    def _build_response(
+        self,
+        perception: PerceptionBundleDTO,
+        best_result: Optional[NodeReasoningResultDTO],
+        working_thoughts: List[ThoughtDTO],
+        cycles_used: int
+    ) -> MothershipResponseDTO:
+        if best_result:
+            decision = best_result.decision
+            confidence = best_result.confidence
+            goal_reached = best_result.goal_reached
+            source_thoughts = best_result.thought_history
+        else:
+            decision = None
+            confidence = 0.0
+            goal_reached = False
+            source_thoughts = working_thoughts
+
+        reasoning_summary = self._summarize_reasoning(source_thoughts)
+        if not decision and source_thoughts:
+            decision = source_thoughts[-1].thought_body
+
+        return MothershipResponseDTO(
+            decision=decision,
+            confidence=confidence,
+            goal_reached=goal_reached,
+            observations_used=self.perception_formatter.format_observation_names(perception.observations),
+            reasoning_summary=reasoning_summary,
+            cycles_used=cycles_used,
+        )
+
+    def _summarize_reasoning(self, thoughts: List[ThoughtDTO]) -> str:
+        if not thoughts:
+            return "No reasoning thoughts were generated."
+        latest = thoughts[-1]
+        summary = latest.thought_body or latest.raw_text
+        return summary[:360]
+
+    def _average(self, values: List[float]) -> float:
+        return sum(values) / len(values)

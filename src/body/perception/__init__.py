@@ -8,6 +8,7 @@ from .filesystem import FilesystemDevice
 from .browser import BrowserDevice
 from .detector import get_current_os
 from .network import NetworkManager
+from .perceptionDTOs import ObservationKind, PerceptionBundleDTO, PerceptionCaptureRequestDTO, PerceptionObservationDTO
 
 __all__ = [
     "PerceptionDevice",
@@ -19,6 +20,10 @@ __all__ = [
     "FilesystemDevice",
     "BrowserDevice",
     "get_current_os",
-    "NetworkManager"
+    "NetworkManager",
+    "ObservationKind",
+    "PerceptionBundleDTO",
+    "PerceptionCaptureRequestDTO",
+    "PerceptionObservationDTO"
 ]
 
