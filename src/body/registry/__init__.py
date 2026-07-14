@@ -1,3 +1,4 @@
-from .ToolRegistry import ToolRegistry
+from .PerceptionRegistry import PerceptionRegistry
 
-__all__ = ["ToolRegistry"]
+__all__ = ["PerceptionRegistry"]
+

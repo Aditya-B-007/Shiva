@@ -54,9 +54,28 @@ class CorticalColumn(ABC):
         self.scratchpad.clear()
         self.chain.reset()
         
+        # Format structured sensory observations nicely for the reasoning workspace
+        if isinstance(perception, dict) and "observations" in perception:
+            obs_list = []
+            for dev, val in perception["observations"].items():
+                # Present a clean preview representing the raw observation data
+                if isinstance(val, bytes):
+                    preview = f"<Raw Bytes: Length {len(val)}>"
+                else:
+                    preview = str(val)
+                obs_list.append(f"- {dev}: {preview}")
+            
+            obs_str = "\n".join(obs_list)
+            formatted_perception = (
+                f"Query/Problem: {perception.get('query')}\n"
+                f"Current Sensory Observations:\n{obs_str}"
+            )
+        else:
+            formatted_perception = str(perception)
+        
         # Format the sensory input alongside the column's specialized system prompt
         self.scratchpad.initialize(
-            perception=f"[Specialty Instruction: {self.system_prompt}] Perception: {perception}",
+            perception=f"[Specialty Instruction: {self.system_prompt}] Perception:\n{formatted_perception}",
             memory=memories,
             emotion=self.emotion.current_emotion() if hasattr(self.emotion, "current_emotion") else None
         )
@@ -66,7 +85,8 @@ class CorticalColumn(ABC):
                 self.scratchpad.append_thought(t)
                 
         # Run node reasoning
-        return self.engine.process(perception)
+        return self.engine.process(formatted_perception)
+
 
 
 class AnalyticalColumn(CorticalColumn):

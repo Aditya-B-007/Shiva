@@ -31,10 +31,11 @@ class CognitiveStabilityRegulator:
 
 
 class Mothership:
-    def __init__(self, memory_engine: Any, emotion_handler: Any, scheduler: Any):
+    def __init__(self, memory_engine: Any, emotion_handler: Any, scheduler: Any, execution_engine: Any = None):
         self.memory = memory_engine
         self.emotion = emotion_handler
         self.scheduler = scheduler
+        self.execution_engine = execution_engine
         
         # Instability regulator
         self.stability_regulator = CognitiveStabilityRegulator()
@@ -42,10 +43,6 @@ class Mothership:
         self.evaporation_rate = 0.10
 
     def arbitrate_columns(self, cycle: int) -> List[CorticalColumn]:
-        """
-        Executive Prefrontal Decision: Which specialist columns should think?
-        Uses the state of the stability regulator to allocate compute resources.
-        """
         instability = abs(self.stability_regulator.theta)
         
         # 1. Base allocation: standard analytical and creative columns
@@ -65,9 +62,24 @@ class Mothership:
             
         return columns
 
-    def solve_problem(self, problem: str, max_cycles: int = 4) -> NodeReasoningResultDTO:
+    def solve_problem(self, problem: str, max_cycles: int = 4, devices_to_query: List[str] = None) -> NodeReasoningResultDTO:
         working_thoughts: List[ThoughtDTO] = []
         best_overall_result = None
+
+        # 0. Proactively capture observations from requested perception devices
+        observations: Dict[str, Any] = {}
+        if self.execution_engine and devices_to_query:
+            for device in devices_to_query:
+                try:
+                    observations[device] = self.execution_engine.capture(device)
+                except Exception as e:
+                    observations[device] = f"Error: {str(e)}"
+
+        # Bundle problem statement and perception data together
+        sensory_input = {
+            "query": problem,
+            "observations": observations
+        }
 
         for cycle in range(max_cycles):
             # 1. Prefrontal scheduling
@@ -77,7 +89,7 @@ class Mothership:
             # 2. Execute columns and collect results
             cycle_results: List[NodeReasoningResultDTO] = []
             for col in columns:
-                res = col.activate(problem, working_thoughts)
+                res = col.activate(sensory_input, working_thoughts)
                 cycle_results.append(res)
 
             # 3. Calculate cognitive feedback signals for the stability regulator
