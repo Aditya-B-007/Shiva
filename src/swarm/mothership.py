@@ -30,8 +30,7 @@ class CognitiveStabilityRegulator:
         stabilizing_accel = -control_effort / self.length
         self.theta_dot += stabilizing_accel * dt
         self.theta += self.theta_dot * dt
-
-
+        
 class Mothership:
     def __init__(self, memory_engine: Any, emotion_handler: Any, scheduler: Any, execution_engine: Any = None):
         self.memory = memory_engine
