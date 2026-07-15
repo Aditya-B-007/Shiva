@@ -56,6 +56,13 @@ class EmotionalOrchestrator:
     ##########################################################################
 
     def perceive_event(self, event: Any) -> EmotionDTO:
+        # Wrap string/non-FeatureBundle perceptions into a FeatureBundle to satisfy AppraisalEngine requirements
+        from src.brain.emotionalHandlerAndStore.emotionalContract import FeatureBundle, Event, EventType, PerceptionDTO
+        if not isinstance(event, FeatureBundle):
+            evt = Event(event_type=EventType.PERCEPTION, payload=str(event), source="perception")
+            perc = PerceptionDTO(text=str(event))
+            event = FeatureBundle(event=evt, perception=perc)
+
         appraisal = self._appraisal.evaluate(event)
         homeostasis = self._homeostasis.current_state()
         
