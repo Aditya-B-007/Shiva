@@ -7,3 +7,4 @@ Pillow>=9.5.0
 pyperclip>=1.8.2
 psutil>=5.9.0
 torch>=2.0.0
+flet>=0.21.0

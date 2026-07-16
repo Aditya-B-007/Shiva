@@ -14,6 +14,8 @@ except ImportError:
     logger.warning("FastAPI or uvicorn is not installed. Standalone server mode will not be available.")
 
 from src.orchestrator.core import ShivaOrchestrator
+from src.contracts import block_schemas
+from src.orchestrator.schema import Workflow
 
 def create_app(orchestrator: Optional[ShivaOrchestrator] = None) -> FastAPI:
     """
@@ -55,11 +57,17 @@ def create_app(orchestrator: Optional[ShivaOrchestrator] = None) -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.get("/api/block-schemas")
+    def get_block_schemas():
+        """Lists frontend-safe workflow block schemas."""
+        return [schema.to_json() for schema in block_schemas()]
+
     @app.post("/api/workflow")
     def execute_workflow(payload: dict):
         """Executes a complete drag-and-drop workflow layout synchronously."""
         try:
-            result = orch.execute_workflow(payload)
+            workflow = Workflow.from_dict(payload)
+            result = orch.execute_workflow(workflow.to_json())
             if result.get("metadata", {}).get("error"):
                 raise HTTPException(status_code=400, detail=result.get("text"))
             return result
@@ -94,7 +102,8 @@ def create_app(orchestrator: Optional[ShivaOrchestrator] = None) -> FastAPI:
                 })
                 
                 # Execute core loop
-                result = orch.execute_workflow(data)
+                workflow = Workflow.from_dict(data)
+                result = orch.execute_workflow(workflow.to_json())
                 
                 await websocket.send_json({
                     "status": "completed",
