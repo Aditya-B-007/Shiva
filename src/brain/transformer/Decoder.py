@@ -5,6 +5,7 @@ from typing import Dict, Any
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.brain.transformer.transformerArchitectureDTOs import DecoderInputDTO, DecoderOutputDTO
 from src.brain.node.nodeDTOs import ReasoningContextDTO, ThoughtDTO
+from src.brain.transformer.thought_parser import parse_thought_text
 
 class Decoder(nn.Module):
     def __init__(self, model_name: str = "HuggingFaceTB/SmolLM2-135M-Instruct", device: str = None):
@@ -95,6 +96,11 @@ class Decoder(nn.Module):
             for t in context.thoughts:
                 user_parts.append(f"- THOUGHT: {t.thought_body}\n  CRITIQUE: {t.critique}\n  CONFIDENCE: {t.confidence}")
                 
+        if context.context:
+            user_parts.append("Runtime Guidance:")
+            for key, value in context.context.items():
+                user_parts.append(f"- {key}: {value}")
+
         user_parts.append("Generate the next thought, critique, and confidence:")
         user_content = "\n".join(user_parts)
         
@@ -117,62 +123,24 @@ class Decoder(nn.Module):
         prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         
+        generation_kwargs = {
+            "max_new_tokens": max_new_tokens,
+            "pad_token_id": self.tokenizer.pad_token_id,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "do_sample": True,
+            "temperature": 0.7,
+            "top_p": 0.9,
+        }
+        generation_kwargs.update(kwargs)
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=max_new_tokens,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-                **kwargs
+                **generation_kwargs,
             )
             
         input_len = inputs["input_ids"].shape[1]
         generated_tokens = outputs[0][input_len:]
         raw_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
         
-        # Parse the structured self-reflection
-        thought_body = ""
-        critique = ""
-        confidence = 0.0
-        parsed_decision = None
-        
-        if "THOUGHT:" in raw_text:
-            try:
-                thought_body = raw_text.split("THOUGHT:")[-1].split("CRITIQUE:")[0].strip()
-            except Exception:
-                thought_body = raw_text
-        else:
-            thought_body = raw_text
-            
-        if "CRITIQUE:" in raw_text:
-            try:
-                critique = raw_text.split("CRITIQUE:")[-1].split("CONFIDENCE:")[0].strip()
-            except Exception:
-                pass
-                
-        if "CONFIDENCE:" in raw_text:
-            try:
-                conf_str = raw_text.split("CONFIDENCE:")[-1].split("DECISION:")[0].strip()
-                import re
-                match = re.search(r"[-+]?\d*\.\d+|\d+", conf_str)
-                if match:
-                    confidence = float(match.group(0))
-            except Exception:
-                pass
-                
-        if "DECISION:" in raw_text:
-            try:
-                parsed_decision = raw_text.split("DECISION:")[-1].strip()
-            except Exception:
-                pass
-                
-        return ThoughtDTO(
-            raw_text=raw_text,
-            thought_body=thought_body,
-            critique=critique,
-            confidence=confidence,
-            parsed_decision=parsed_decision
-        )
+        return parse_thought_text(raw_text)

@@ -53,6 +53,16 @@ def _clamp(value: float, minimum: float = MIN_NORMALIZED_VALUE, maximum: float =
     return max(minimum, min(maximum, value))
 
 
+def _soft_boundary_integrate(current_value: float, derivative: float, dt: float) -> float:
+    current = _clamp(_validate_finite(current_value, "current_value"))
+    delta = _validate_finite(derivative, "derivative") * _validate_finite(dt, "dt")
+    if delta > 0.0:
+        delta *= max(0.0, MAX_NORMALIZED_VALUE - current)
+    elif delta < 0.0:
+        delta *= max(0.0, current - MIN_NORMALIZED_VALUE)
+    return _clamp(current + delta)
+
+
 def _sigmoid(value: float, steepness: float = DEFAULT_SIGMOID_STEEPNESS, midpoint: float = DEFAULT_SIGMOID_MIDPOINT) -> float:
     exponent = -steepness * (value - midpoint)
     return 1.0 / (1.0 + math.exp(exponent))
@@ -407,7 +417,7 @@ class GraphDynamics:
 
 
 class EulerIntegrator(Integrator):
-    """Euler integration for version-one homeostasis dynamics."""
+    """Euler integration with soft boundary damping for homeostasis dynamics."""
 
     def integrate(
         self,
@@ -420,7 +430,7 @@ class EulerIntegrator(Integrator):
         if timestep <= 0.0:
             raise ValueError("dt must be positive.")
         values = {
-            name: _clamp(state.value(name) + timestep * derivative.values[name])
+            name: _soft_boundary_integrate(state.value(name), derivative.values[name], timestep)
             for name in state.values
         }
         values[HomeostasisVariable.METASTABILITY.value] = _clamp(
@@ -580,8 +590,7 @@ class Homeostasis(IHomeostasis):
         return self.current_state()
 
     def restore(self) -> None:
-        pass
+        self.engine.evolve(())
 
     def reset(self) -> None:
         self.engine.reset()
-

@@ -122,13 +122,6 @@ VOCABS = {
     "dominant_emotion": ["UNK", "joy", "sadness", "fear", "anger", "surprise", "disgust", "trust", "anticipation", "curiosity", "confidence", "frustration", "motivation", "uncertainty", "None"]
 }
 
-
-#============HELPER FUNCTIONS===============
-
-
-#============ABSTRACT CLASSES AND PROTOCOLS===============
-
-
 #============CONCRETE IMPLEMENTATIONS & DATA STRUCTURES===============
 class FeatureExtractor:
     """

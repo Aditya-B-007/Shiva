@@ -1,10 +1,14 @@
 import math
+import logging
+import time
 from typing import Any, List, Dict, Iterable, Optional
 from src.swarm.cells import AnalyticalColumn, CreativeColumn, RiskColumn, VerificationColumn, CorticalColumn
-from src.brain.node.nodeDTOs import NodeReasoningResultDTO, ThoughtDTO
+from src.brain.node.nodeDTOs import BrainErrorDTO, NodeReasoningResultDTO, ThoughtDTO
 from src.body.perception.perceptionDTOs import PerceptionBundleDTO, PerceptionCaptureRequestDTO, PerceptionObservationDTO
 from src.body.perception.perceptionFormatter import PerceptionObservationFactory, PerceptionPromptFormatter
 from src.swarm.swarmDTOs import MothershipResponseDTO
+
+logger = logging.getLogger("shiva.swarm.mothership")
 
 class CognitiveStabilityRegulator:
     def __init__(self):
@@ -56,11 +60,11 @@ class Mothership:
         
         # 2. Reactive control allocation: if unstable, spin up risk auditing and verification
         if instability > 0.15:
-            print(f"[Executive Cortex] Instability Alert ({instability:.3f}) -> Scheduling RiskColumn.")
+            logger.info("Instability alert %.3f -> scheduling RiskColumn.", instability)
             columns.append(RiskColumn(3, self.memory, self.emotion, self.scheduler))
             
         if instability > 0.35:
-            print(f"[Executive Cortex] Critical Disagreements ({instability:.3f}) -> Scheduling VerificationColumn.")
+            logger.info("Critical instability %.3f -> scheduling VerificationColumn.", instability)
             columns.append(VerificationColumn(4, self.memory, self.emotion, self.scheduler))
             
         return columns
@@ -74,6 +78,7 @@ class Mothership:
         working_thoughts: List[ThoughtDTO] = []
         best_overall_result = None
         cycles_used = 0
+        errors: List[BrainErrorDTO] = []
 
         sensory_input = self._capture_perception_bundle(problem, devices_to_query)
 
@@ -81,13 +86,31 @@ class Mothership:
             cycles_used = cycle + 1
             # 1. Prefrontal scheduling
             columns = self.arbitrate_columns(cycle)
-            print(f"[Executive Cortex] Cycle {cycle+1}: Active Specialist Columns = {len(columns)}")
+            logger.info("Cycle %s active specialist columns=%s.", cycle + 1, len(columns))
 
             # 2. Execute columns and collect results
             cycle_results: List[NodeReasoningResultDTO] = []
             for col in columns:
-                res = col.activate(sensory_input, working_thoughts)
-                cycle_results.append(res)
+                try:
+                    start = time.perf_counter()
+                    res = col.activate(sensory_input, working_thoughts)
+                    duration_ms = (time.perf_counter() - start) * 1000.0
+                    logger.info(
+                        "Column %s completed in %.1fms with confidence %.2f.",
+                        col.column_id,
+                        duration_ms,
+                        res.confidence,
+                    )
+                    cycle_results.append(res)
+                    errors.extend(res.errors)
+                except Exception as exc:
+                    error = BrainErrorDTO(
+                        component=f"column:{col.column_id}",
+                        message=str(exc),
+                        recoverable=True,
+                    )
+                    logger.exception("Column %s failed.", col.column_id)
+                    errors.append(error)
 
             # 3. Calculate cognitive feedback signals for the stability regulator
             # Check average confidence of columns
@@ -103,17 +126,23 @@ class Mothership:
                 
             # Conflict: variance/disagreement among column decisions
             decisions = [res.decision for res in cycle_results if res.decision]
-            conflict = 1.0 - (len(set(decisions)) / len(decisions)) if decisions else 0.0
+            conflict = self._decision_conflict(decisions)
 
             # Perturb the pendulum system with these cognitive states
             self.stability_regulator.apply_cognitive_perturbations(uncertainty, stress, conflict)
-            print(f"[Executive Cortex] Cognitive Feedback: Uncertainty={uncertainty:.2f}, Conflict={conflict:.2f} -> Instability Angle={self.stability_regulator.theta:.4f}")
+            logger.info(
+                "Cognitive feedback uncertainty=%.2f conflict=%.2f instability=%.4f.",
+                uncertainty,
+                conflict,
+                self.stability_regulator.theta,
+            )
 
             # 4. Apply prefrontal control effort to restore stability
             control_effort = 0.0
             for res in cycle_results:
                 if res.decision and res.confidence > 0.70:
                     control_effort += 1.5 * (res.confidence - 0.5)
+                    self.pheromone_map[res.decision] = self.pheromone_map.get(res.decision, 0.0) + res.confidence
                     if best_overall_result is None or res.confidence > best_overall_result.confidence:
                         best_overall_result = res
                         
@@ -133,10 +162,10 @@ class Mothership:
 
             # 6. Check for convergence / early stopping criteria
             if abs(self.stability_regulator.theta) < 0.05 and best_overall_result and best_overall_result.confidence > 0.85:
-                print(f"[Executive Cortex] Convergence Detected in cycle {cycle+1}. Stopping reasoning.")
+                logger.info("Convergence detected in cycle %s. Stopping reasoning.", cycle + 1)
                 break
 
-        return self._build_response(sensory_input, best_overall_result, working_thoughts, cycles_used)
+        return self._build_response(sensory_input, best_overall_result, working_thoughts, cycles_used, errors)
 
     def _capture_perception_bundle(
         self,
@@ -183,7 +212,8 @@ class Mothership:
         perception: PerceptionBundleDTO,
         best_result: Optional[NodeReasoningResultDTO],
         working_thoughts: List[ThoughtDTO],
-        cycles_used: int
+        cycles_used: int,
+        errors: Optional[List[BrainErrorDTO]] = None,
     ) -> MothershipResponseDTO:
         if best_result:
             decision = best_result.decision
@@ -207,6 +237,11 @@ class Mothership:
             observations_used=self.perception_formatter.format_observation_names(perception.observations),
             reasoning_summary=reasoning_summary,
             cycles_used=cycles_used,
+            errors=list(errors or []),
+            metadata={
+                "instability": abs(self.stability_regulator.theta),
+                "pheromone_map": dict(self.pheromone_map),
+            },
         )
 
     def _summarize_reasoning(self, thoughts: List[ThoughtDTO]) -> str:
@@ -218,3 +253,13 @@ class Mothership:
 
     def _average(self, values: List[float]) -> float:
         return sum(values) / len(values)
+
+    def _decision_conflict(self, decisions: List[str]) -> float:
+        if len(decisions) <= 1:
+            return 0.0
+        counts: Dict[str, int] = {}
+        for decision in decisions:
+            normalized = decision.strip().lower()
+            counts[normalized] = counts.get(normalized, 0) + 1
+        majority = max(counts.values())
+        return 1.0 - (majority / len(decisions))

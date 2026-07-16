@@ -55,7 +55,8 @@ class CorticalColumn(ABC):
         return self.engine.process(
             formatted_perception,
             seed_thoughts=working_history or [],
-            memories=self.retrieve_context(perception)
+            memories=self.retrieve_context(perception),
+            decoder_kwargs=dict(self.search_policy),
         )
 
     def _format_for_reasoning(self, perception: Any) -> str:

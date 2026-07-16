@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 try:
@@ -77,7 +78,7 @@ class MemoryEngine(IMemoryEngine):
             if node.status == MemoryStatus.PRUNED:
                 continue
             text = f"{node.summary} {node.raw_content} {node.context_signature}".lower()
-            lexical_score = 1.0 if query_text and query_text in text else 0.0
+            lexical_score = self._lexical_score(query_text, text)
             score = (
                 lexical_score * 0.45
                 + node.activation * 0.20
@@ -96,6 +97,32 @@ class MemoryEngine(IMemoryEngine):
             memories=tuple(self._node_to_dto(node) for node in selected),
             confidence=confidence,
         )
+
+    def _lexical_score(self, query_text: str, memory_text: str) -> float:
+        query_terms = self._tokenize_and_stem(query_text)
+        if not query_terms:
+            return 0.0
+        memory_terms = self._tokenize_and_stem(memory_text)
+        if not memory_terms:
+            return 0.0
+        if query_text and query_text in memory_text:
+            return 1.0
+        return len(query_terms.intersection(memory_terms)) / len(query_terms)
+
+    def _tokenize_and_stem(self, text: str) -> set[str]:
+        terms = set()
+        for word in re.findall(r"\b[a-zA-Z0-9_]{3,}\b", text.lower()):
+            terms.add(self._stem(word))
+        return terms
+
+    def _stem(self, word: str) -> str:
+        if word.endswith("ing") and len(word) > 5:
+            return word[:-3]
+        if word.endswith("ed") and len(word) > 4:
+            return word[:-2]
+        if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+            return word[:-1]
+        return word
 
     def sleep(self) -> SleepCycleResult:
         result = self._sleep_cycle.run(self._graph)

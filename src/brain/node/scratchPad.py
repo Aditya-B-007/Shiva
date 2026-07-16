@@ -56,7 +56,8 @@ class ScratchPad:
             memories=self.retrieved_memories,
             emotion=self.emotional_state,
             thoughts=list(self.thoughts),
-            hypotheses=list(self.hypotheses)
+            hypotheses=list(self.hypotheses),
+            context=dict(self.context),
         )
     
     def set_decision(
