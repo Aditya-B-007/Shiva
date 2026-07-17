@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from src.brain.node.nodeDTOs import ThoughtDTO, ReasoningContextDTO
+from src.transferDTO import ThoughtDTO, ReasoningContextDTO
 
 
 @dataclass
@@ -56,7 +56,8 @@ class ScratchPad:
             memories=self.retrieved_memories,
             emotion=self.emotional_state,
             thoughts=list(self.thoughts),
-            hypotheses=list(self.hypotheses)
+            hypotheses=list(self.hypotheses),
+            context=dict(self.context),
         )
     
     def set_decision(

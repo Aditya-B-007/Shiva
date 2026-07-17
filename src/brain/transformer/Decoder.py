@@ -1,14 +1,23 @@
+import os
+import logging
+# Silence HuggingFace progress bars and log messages to keep model selection private
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
+
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from src.brain.transformer.transformerArchitectureDTOs import DecoderInputDTO, DecoderOutputDTO
-from src.brain.node.nodeDTOs import ReasoningContextDTO, ThoughtDTO
+from src.transferDTO import DecoderInputDTO, DecoderOutputDTO, ReasoningContextDTO, ThoughtDTO
+from src.brain.transformer.thought_parser import parse_thought_text
 
 class Decoder(nn.Module):
-    def __init__(self, model_name: str = "HuggingFaceTB/SmolLM2-135M-Instruct", device: str = None):
+    def __init__(self, model_name: str = None, device: str = None):
         super().__init__()
+        # Secretly hardcode the Gemma 4B/3-4B-Instruct model
+        resolved_model_name = "google/gemma-3-4b-it"
         if device is None:
             if torch.cuda.is_available():
                 self.device = "cuda"
@@ -19,11 +28,11 @@ class Decoder(nn.Module):
         else:
             self.device = device
             
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(resolved_model_name)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             
-        self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
+        self.model = AutoModelForCausalLM.from_pretrained(resolved_model_name).to(self.device)
         self.model.eval()
         
         self.projection_layer = None
@@ -74,7 +83,69 @@ class Decoder(nn.Module):
             hidden_states_np=hidden_states_np
         )
 
-    def generateDecision(self, context: ReasoningContextDTO, max_new_tokens: int = 128, **kwargs) -> ThoughtDTO:
+    def execute_sandbox_script(self, code: str, workspace_dir: Optional[str] = None) -> str:
+        """
+        Executes the generated Python script in a local sandbox with a comprehensive
+        set of standard library imports.
+        """
+        import io
+        import contextlib
+        import sys
+
+        # Setup standard library imports in the sandbox globals
+        import os
+        import math
+        import json
+        import re
+        import pathlib
+        import shutil
+        import glob
+        import random
+        import datetime
+        import time
+        import collections
+        import itertools
+        import functools
+        import hashlib
+        import csv
+        import socket
+        import urllib
+        import subprocess
+
+        sandbox_globals = {
+            "os": os,
+            "sys": sys,
+            "math": math,
+            "json": json,
+            "re": re,
+            "pathlib": pathlib,
+            "shutil": shutil,
+            "glob": glob,
+            "random": random,
+            "datetime": datetime,
+            "time": time,
+            "collections": collections,
+            "itertools": itertools,
+            "functools": functools,
+            "hashlib": hashlib,
+            "csv": csv,
+            "socket": socket,
+            "urllib": urllib,
+            "subprocess": subprocess,
+            "WORKSPACE_DIR": workspace_dir,
+        }
+
+        stdout_buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stdout_buf):
+                # Execute the code block
+                exec(code, sandbox_globals)
+            output = stdout_buf.getvalue()
+            return output if output.strip() else "Script executed successfully with no stdout."
+        except Exception as e:
+            return f"Sandbox execution error: {type(e).__name__}: {str(e)}"
+
+    def generateDecision(self, context: ReasoningContextDTO, max_new_tokens: int = 32768, workspace_dir: Optional[str] = None, **kwargs) -> ThoughtDTO:
         # Build user prompt
         user_parts = [f"Perception: {context.perception}"]
         if context.emotion:
@@ -95,6 +166,11 @@ class Decoder(nn.Module):
             for t in context.thoughts:
                 user_parts.append(f"- THOUGHT: {t.thought_body}\n  CRITIQUE: {t.critique}\n  CONFIDENCE: {t.confidence}")
                 
+        if context.context:
+            user_parts.append("Runtime Guidance:")
+            for key, value in context.context.items():
+                user_parts.append(f"- {key}: {value}")
+
         user_parts.append("Generate the next thought, critique, and confidence:")
         user_content = "\n".join(user_parts)
         
@@ -105,7 +181,10 @@ class Decoder(nn.Module):
             "THOUGHT: <your reasoning/thought>\n"
             "CRITIQUE: <your critique of why this might be wrong or what you missed>\n"
             "CONFIDENCE: <your self-reflected confidence between 0.0 and 1.0>\n\n"
-            "If you are ready to make a final decision, append 'DECISION: <your decision>' at the end."
+            "If you are ready to make a final decision, append 'DECISION: <your decision>' at the end.\n"
+            "If the task requires writing code, creating/editing files, or execution logic, "
+            "you MUST output a Python 3 code block in your decision (using ```python ... ```). "
+            "The sandbox script can read/write files under WORKSPACE_DIR."
         )
         
         # Format using the model's native chat template
@@ -117,62 +196,54 @@ class Decoder(nn.Module):
         prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         
+        generation_kwargs = {
+            "max_new_tokens": max_new_tokens,
+            "pad_token_id": self.tokenizer.pad_token_id,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "do_sample": True,
+            "temperature": 0.7,
+            "top_p": 0.9,
+        }
+        generation_kwargs.update(kwargs)
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=max_new_tokens,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-                **kwargs
+                **generation_kwargs,
             )
             
         input_len = inputs["input_ids"].shape[1]
         generated_tokens = outputs[0][input_len:]
         raw_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-        
-        # Parse the structured self-reflection
-        thought_body = ""
-        critique = ""
-        confidence = 0.0
-        parsed_decision = None
-        
-        if "THOUGHT:" in raw_text:
+
+        # Parse generated thought text
+        thought_dto = parse_thought_text(raw_text)
+
+        # Sandbox Execution Hook:
+        # If the final decision contains a Python code block, execute it in the sandbox
+        decision_body = thought_dto.parsed_decision or thought_dto.thought_body
+        if decision_body and "```python" in decision_body:
             try:
-                thought_body = raw_text.split("THOUGHT:")[-1].split("CRITIQUE:")[0].strip()
-            except Exception:
-                thought_body = raw_text
-        else:
-            thought_body = raw_text
-            
-        if "CRITIQUE:" in raw_text:
-            try:
-                critique = raw_text.split("CRITIQUE:")[-1].split("CONFIDENCE:")[0].strip()
-            except Exception:
-                pass
-                
-        if "CONFIDENCE:" in raw_text:
-            try:
-                conf_str = raw_text.split("CONFIDENCE:")[-1].split("DECISION:")[0].strip()
-                import re
-                match = re.search(r"[-+]?\d*\.\d+|\d+", conf_str)
-                if match:
-                    confidence = float(match.group(0))
-            except Exception:
-                pass
-                
-        if "DECISION:" in raw_text:
-            try:
-                parsed_decision = raw_text.split("DECISION:")[-1].strip()
-            except Exception:
-                pass
-                
-        return ThoughtDTO(
-            raw_text=raw_text,
-            thought_body=thought_body,
-            critique=critique,
-            confidence=confidence,
-            parsed_decision=parsed_decision
-        )
+                start_idx = decision_body.find("```python") + len("```python")
+                end_idx = decision_body.find("```", start_idx)
+                if end_idx != -1:
+                    code_block = decision_body[start_idx:end_idx].strip()
+                    sandbox_result = self.execute_sandbox_script(code_block, workspace_dir)
+                    
+                    # Append results back to decision
+                    enriched_decision = (
+                        f"{decision_body}\n\n"
+                        f"--- SANDBOX EXECUTION OUTPUT ---\n"
+                        f"{sandbox_result}\n"
+                        f"--------------------------------"
+                    )
+                    
+                    # Update DTO
+                    if thought_dto.parsed_decision:
+                        thought_dto.parsed_decision = enriched_decision
+                    else:
+                        thought_dto.thought_body = enriched_decision
+            except Exception as e:
+                logger.error(f"Error handling sandbox execution in generateDecision: {e}")
+
+        return thought_dto

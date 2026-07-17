@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 from abc import ABC, abstractmethod
-from src.brain.node.nodeDTOs import ThoughtDTO
+from src.transferDTO import ThoughtDTO
 
 class IGoalEvaluator(ABC):
     @abstractmethod
@@ -16,19 +16,41 @@ class DefaultGoalEvaluator(IGoalEvaluator):
         return False
 
 class MetacognitiveGoalEvaluator(IGoalEvaluator):
-    def __init__(self, confidence_threshold: float = 0.85):
+    def __init__(
+        self,
+        confidence_threshold: float = 0.85,
+        decay_rate: float = 0.05,
+        minimum_threshold: float = 0.55,
+    ):
         self.confidence_threshold = confidence_threshold
+        self.decay_rate = decay_rate
+        self.minimum_threshold = minimum_threshold
 
     def evaluate(self, last_thought: ThoughtDTO, scratchpad: Any) -> bool:
+        iteration = int(scratchpad.context.get("current_iteration", 0))
+        threshold = max(
+            self.minimum_threshold,
+            self.confidence_threshold - (iteration * self.decay_rate),
+        )
+
         if last_thought.parsed_decision is not None:
-            if last_thought.confidence >= self.confidence_threshold:
+            if last_thought.confidence >= threshold:
                 scratchpad.set_decision(last_thought.parsed_decision, last_thought.confidence)
                 return True
             else:
-                scratchpad.update_context("reflection_warning", "Decision proposed but confidence is too low.")
+                scratchpad.update_context(
+                    "reflection_warning",
+                    f"Decision proposed but confidence is too low ({last_thought.confidence:.2f} < {threshold:.2f}). Refine briefly or finalize with stronger evidence.",
+                )
                 
         if "wrong" in last_thought.critique.lower() or "contradict" in last_thought.critique.lower():
             scratchpad.update_context("correction_needed", True)
+
+        if not last_thought.parse_diagnostics.parse_success:
+            scratchpad.update_context(
+                "format_warning",
+                f"Previous response missed fields: {', '.join(last_thought.parse_diagnostics.missing_fields)}. Use the required THOUGHT/CRITIQUE/CONFIDENCE format.",
+            )
             
         return False
 
@@ -74,6 +96,7 @@ class ChainOfThought:
     ) -> None:
         self.current_iteration += 1
         self.thought_history.append(thought)
+        scratchpad.update_context("current_iteration", self.current_iteration)
 
         if self.evaluate_goal(scratchpad):
             self.goal_reached = True

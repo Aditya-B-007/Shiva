@@ -6,48 +6,30 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import psutil
 
-# Setup robust imports to handle relative and absolute imports in python paths
 try:
     from emotionInterface import IAppraisal, IFeatureEmbedding
-    from emotionalContract import (
-        EventType,
-        FeatureBundle,
-        NumericalFeatureVector,
-        AppraisalDTO
-    )
 except ImportError:
     try:
         from .emotionInterface import IAppraisal, IFeatureEmbedding
-        from .emotionalContract import (
-            EventType,
-            FeatureBundle,
-            NumericalFeatureVector,
-            AppraisalDTO
-        )
     except ImportError:
         from src.brain.emotionalHandlerAndStore.emotionInterface import IAppraisal, IFeatureEmbedding
-        from src.brain.emotionalHandlerAndStore.emotionalContract import (
-            EventType,
-            FeatureBundle,
-            NumericalFeatureVector,
-            AppraisalDTO
-        )
 
-# Import simplified generic DTOs from transferDTO
-try:
-    from transferDTO import Tokens, TokenBundle, Latent
-except ImportError:
-    try:
-        from ...transferDTO import Tokens, TokenBundle, Latent
-    except ImportError:
-        from src.transferDTO import Tokens, TokenBundle, Latent
+from src.transferDTO import (
+    EventType,
+    FeatureBundle,
+    NumericalFeatureVector,
+    AppraisalDTO,
+    Tokens,
+    TokenBundle,
+    Latent,
+)
 
 from dataclasses import dataclass
 
 @dataclass
 class TransformerConfig:
     vocab_size: int = 32000
-    max_sequence_length: int = 2048
+    max_sequence_length: int = 32768
     vector_size: int = 2048
     num_heads: int = 8
     num_layers: int = 18
@@ -121,13 +103,6 @@ VOCABS = {
     "env_device_awake": ["UNK", "True", "False", "None"],
     "dominant_emotion": ["UNK", "joy", "sadness", "fear", "anger", "surprise", "disgust", "trust", "anticipation", "curiosity", "confidence", "frustration", "motivation", "uncertainty", "None"]
 }
-
-
-#============HELPER FUNCTIONS===============
-
-
-#============ABSTRACT CLASSES AND PROTOCOLS===============
-
 
 #============CONCRETE IMPLEMENTATIONS & DATA STRUCTURES===============
 class FeatureExtractor:
@@ -246,10 +221,6 @@ class FeatureExtractor:
         if p:
             if p.text_embedding is not None:
                 embeddings["text_embedding"] = p.text_embedding
-            if p.vision_embedding is not None:
-                embeddings["vision_embedding"] = p.vision_embedding
-            if p.audio_embedding is not None:
-                embeddings["audio_embedding"] = p.audio_embedding
         return embeddings
 
     def _produce_vector(
@@ -476,7 +447,7 @@ class CognitiveStateEncoder(nn.Module):
         device = self.encoder.device
         
         self.vector_size = self.config.vector_size
-        self.bert_dim = self.encoder.model.config.hidden_size
+        self.bert_dim = int(os.getenv("SHIVA_ENCODER_HIDDEN_SIZE", "1024"))
         
         self.proj_in = nn.Linear(self.vector_size, self.bert_dim).to(device)
         self.proj_out = nn.Linear(self.bert_dim, self.vector_size).to(device)

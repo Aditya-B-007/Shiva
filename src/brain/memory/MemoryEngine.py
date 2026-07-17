@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 try:
@@ -11,15 +12,14 @@ except ImportError:
         from src.brain.emotionalHandlerAndStore.emotionInterface import IMemoryEngine
 
 
+from .algorithms.CreditAssigner import CreditAssigner
 from .algorithms.Consolidator import Consolidator
 from .algorithms.DreamGenerator import DreamGenerator
 from .algorithms.ForgettingModel import ForgettingModel
 from .algorithms.IdentityUpdater import IdentityUpdater
 from .algorithms.MemoryEncoder import MemoryEncoder
 from .algorithms.SleepCycle import SleepCycle, SleepCycleResult
-from .dto.MemoryGraphDTO import MemoryGraphDTO
-from .dto.MemoryNodeDTO import MemoryEdgeDTO, MemoryNodeDTO
-from .dto.RetrievalDTO import RetrievalDTO
+from src.transferDTO import MemoryGraphDTO, MemoryEdgeDTO, MemoryNodeDTO, RetrievalDTO
 from .graph.MemoryEdge import AssociationType, MemoryEdge
 from .graph.MemoryGraph import MemoryGraph
 from .graph.MemoryNode import MemoryNode, MemoryStatus, clamp_unit
@@ -42,8 +42,10 @@ class MemoryEngine(IMemoryEngine):
             identity_updater=IdentityUpdater(),
             dream_generator=DreamGenerator(),
         )
+        self._credit_assigner = CreditAssigner()
         self._repository = repository
         self._last_stored_id: str | None = None
+        self._current_episode_trajectory: list[str] = []
 
     def store(
         self,
@@ -54,6 +56,7 @@ class MemoryEngine(IMemoryEngine):
     ) -> MemoryNodeDTO:
         node = self._encoder.encode(perception, emotion, homeostasis, context)
         self._graph.add_node(node)
+        self._current_episode_trajectory.append(node.id)
         if self._last_stored_id is not None:
             self._graph.connect(
                 self._last_stored_id,
@@ -68,6 +71,14 @@ class MemoryEngine(IMemoryEngine):
             self._save_edges_for(node.id)
         return self._node_to_dto(node)
 
+    def clear_trajectory(self) -> None:
+        self._current_episode_trajectory.clear()
+
+    def assign_credit_for_episode(self, reward: float) -> None:
+        self._credit_assigner.assign_credit(self._graph, self._current_episode_trajectory, reward)
+        self.save()
+        self.clear_trajectory()
+
     def retrieve(self, query: Any, limit: int = 5) -> RetrievalDTO:
         if limit <= 0:
             return RetrievalDTO(query=query)
@@ -77,7 +88,7 @@ class MemoryEngine(IMemoryEngine):
             if node.status == MemoryStatus.PRUNED:
                 continue
             text = f"{node.summary} {node.raw_content} {node.context_signature}".lower()
-            lexical_score = 1.0 if query_text and query_text in text else 0.0
+            lexical_score = self._lexical_score(query_text, text)
             score = (
                 lexical_score * 0.45
                 + node.activation * 0.20
@@ -96,6 +107,32 @@ class MemoryEngine(IMemoryEngine):
             memories=tuple(self._node_to_dto(node) for node in selected),
             confidence=confidence,
         )
+
+    def _lexical_score(self, query_text: str, memory_text: str) -> float:
+        query_terms = self._tokenize_and_stem(query_text)
+        if not query_terms:
+            return 0.0
+        memory_terms = self._tokenize_and_stem(memory_text)
+        if not memory_terms:
+            return 0.0
+        if query_text and query_text in memory_text:
+            return 1.0
+        return len(query_terms.intersection(memory_terms)) / len(query_terms)
+
+    def _tokenize_and_stem(self, text: str) -> set[str]:
+        terms = set()
+        for word in re.findall(r"\b[a-zA-Z0-9_]{3,}\b", text.lower()):
+            terms.add(self._stem(word))
+        return terms
+
+    def _stem(self, word: str) -> str:
+        if word.endswith("ing") and len(word) > 5:
+            return word[:-3]
+        if word.endswith("ed") and len(word) > 4:
+            return word[:-2]
+        if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+            return word[:-1]
+        return word
 
     def sleep(self) -> SleepCycleResult:
         result = self._sleep_cycle.run(self._graph)
@@ -118,6 +155,10 @@ class MemoryEngine(IMemoryEngine):
     def save(self) -> None:
         if self._repository is not None:
             self._repository.save_graph(self._graph)
+
+    def assign_credit(self, trajectory: list[str], final_reward: float) -> None:
+        self._credit_assigner.assign_credit(self._graph, trajectory, final_reward)
+        self.save()
 
     def graph_snapshot(self) -> MemoryGraphDTO:
         return MemoryGraphDTO(
