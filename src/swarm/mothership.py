@@ -1,11 +1,17 @@
 import math
 import logging
 import time
+import threading
 from typing import Any, List, Dict, Iterable, Optional
 from src.swarm.cells import AnalyticalColumn, CreativeColumn, RiskColumn, VerificationColumn, CorticalColumn
 from src.brain.node.nodeDTOs import BrainErrorDTO, NodeReasoningResultDTO, ThoughtDTO
-from src.body.perception.perceptionDTOs import PerceptionBundleDTO, PerceptionCaptureRequestDTO, PerceptionObservationDTO
-from src.body.perception.perceptionFormatter import PerceptionObservationFactory, PerceptionPromptFormatter
+from src.input.hook.perception import (
+    PerceptionBundleDTO,
+    PerceptionCaptureRequestDTO,
+    PerceptionObservationDTO,
+    PerceptionObservationFactory,
+    PerceptionPromptFormatter,
+)
 from src.swarm.swarmDTOs import MothershipResponseDTO
 
 logger = logging.getLogger("shiva.swarm.mothership")
@@ -16,6 +22,7 @@ class CognitiveStabilityRegulator:
         self.theta_dot = 0.0      # Rate of instability change (rad/s)
         self.gravity = 9.81
         self.length = 1.0
+        self.damping = 0.15
 
     def apply_cognitive_perturbations(self, uncertainty: float, stress: float, conflict: float, dt: float = 0.05):
         # Cognitive disturbances act as destabilizing forces pushing the pendulum away from theta=0
@@ -24,6 +31,7 @@ class CognitiveStabilityRegulator:
         # Pendulum physics step
         theta_accel = (self.gravity * math.sin(self.theta) + disturbance_force * math.cos(self.theta)) / self.length
         self.theta_dot += theta_accel * dt
+        self.theta_dot *= max(0.0, 1.0 - self.damping * dt)
         self.theta += self.theta_dot * dt
         
         # Clamp theta to prevent physical flip-over
@@ -33,6 +41,7 @@ class CognitiveStabilityRegulator:
         # Stabilizing force applied by the prefrontal cortex (Mothership)
         stabilizing_accel = -control_effort / self.length
         self.theta_dot += stabilizing_accel * dt
+        self.theta_dot *= max(0.0, 1.0 - self.damping * dt)
         self.theta += self.theta_dot * dt
         
 class Mothership:
@@ -43,11 +52,53 @@ class Mothership:
         self.execution_engine = execution_engine
         self.observation_factory = PerceptionObservationFactory()
         self.perception_formatter = PerceptionPromptFormatter()
+        self.workspace_ctx = None
         
         # Instability regulator
         self.stability_regulator = CognitiveStabilityRegulator()
         self.pheromone_map: Dict[str, float] = {} # Shared pheromone trails (confidence)
         self.evaporation_rate = 0.10
+        self._dreaming_active = threading.Event()
+
+    def set_workspace(self, path: str) -> None:
+        """Sets the active workspace path for local codebase inspection."""
+        from src.input.hook.workspace import WorkspaceContext
+        self.workspace_ctx = WorkspaceContext(path)
+        logger.info(f"Workspace set to: {path}")
+
+    def enter_dream_state(self) -> None:
+        """Triggers the background dreaming/sleeping loop when idle."""
+        if self._dreaming_active.is_set():
+            return
+        self._dreaming_active.set()
+        self._dream_thread = threading.Thread(target=self._dream_loop, daemon=True)
+        self._dream_thread.start()
+        logger.info("[Mothership] Background dream/sleep cycle initiated.")
+
+    def _dream_loop(self) -> None:
+        """Continuous sleeping/consolidation loop run on a background daemon thread."""
+        while self._dreaming_active.is_set():
+            try:
+                if hasattr(self.memory, "sleep"):
+                    logger.debug("[Mothership] Executing memory sleep cycle.")
+                    self.memory.sleep()
+            except Exception as e:
+                logger.error(f"[Mothership] Error in background dream cycle: {e}")
+            
+            # Sleep in tiny slices to allow immediate interruption on user prompts
+            for _ in range(50):
+                if not self._dreaming_active.is_set():
+                    break
+                time.sleep(0.1)
+
+    def exit_dream_state(self) -> None:
+        """Suspends background dreaming instantly to handle incoming queries."""
+        if not self._dreaming_active.is_set():
+            return
+        self._dreaming_active.clear()
+        if hasattr(self, "_dream_thread"):
+            self._dream_thread.join()
+        logger.info("[Mothership] Awake. Background dream cycle stopped.")
 
     def arbitrate_columns(self, cycle: int) -> List[CorticalColumn]:
         instability = abs(self.stability_regulator.theta)
@@ -67,20 +118,31 @@ class Mothership:
             logger.info("Critical instability %.3f -> scheduling VerificationColumn.", instability)
             columns.append(VerificationColumn(4, self.memory, self.emotion, self.scheduler))
             
+        # Set workspace path on all columns
+        if self.workspace_ctx:
+            for col in columns:
+                col.workspace_dir = str(self.workspace_ctx.root_path)
+            
         return columns
 
     def solve_problem(
         self,
         problem: str,
         max_cycles: int = 4,
-        devices_to_query: List[Any] = None
     ) -> MothershipResponseDTO:
+        # Guarantee dreaming is suspended before query execution
+        self.exit_dream_state()
+
+        if hasattr(self.memory, "clear_trajectory"):
+            self.memory.clear_trajectory()
+
         working_thoughts: List[ThoughtDTO] = []
+        seen_thought_texts: set[str] = set()
         best_overall_result = None
         cycles_used = 0
         errors: List[BrainErrorDTO] = []
 
-        sensory_input = self._capture_perception_bundle(problem, devices_to_query)
+        sensory_input = self._capture_perception_bundle(problem)
 
         for cycle in range(max_cycles):
             cycles_used = cycle + 1
@@ -153,8 +215,9 @@ class Mothership:
             for res in cycle_results:
                 for t in res.thought_history:
                     # Filter and add unique thoughts to global workspace
-                    if t.raw_text not in [w.raw_text for w in working_thoughts]:
+                    if t.raw_text not in seen_thought_texts:
                         working_thoughts.append(t)
+                        seen_thought_texts.add(t.raw_text)
 
             # Evaporate pheromones
             for k in list(self.pheromone_map.keys()):
@@ -165,47 +228,48 @@ class Mothership:
                 logger.info("Convergence detected in cycle %s. Stopping reasoning.", cycle + 1)
                 break
 
+        if hasattr(self.memory, "assign_credit_for_episode"):
+            # Determine the final reward outcome (confidence of best result, or 0.0 if failed)
+            reward = best_overall_result.confidence if best_overall_result else 0.0
+            self.memory.assign_credit_for_episode(reward)
+
         return self._build_response(sensory_input, best_overall_result, working_thoughts, cycles_used, errors)
 
-    def _capture_perception_bundle(
-        self,
-        problem: str,
-        devices_to_query: Iterable[Any] = None
-    ) -> PerceptionBundleDTO:
+    def _capture_perception_bundle(self, problem: str) -> PerceptionBundleDTO:
         bundle = PerceptionBundleDTO(query=problem)
-        if not self.execution_engine or not devices_to_query:
+        if self.workspace_ctx is None:
             return bundle
 
-        for request in self._normalize_capture_requests(devices_to_query):
-            observation = self._capture_observation(request)
-            bundle.observations.append(observation)
-        return bundle
-
-    def _capture_observation(self, request: PerceptionCaptureRequestDTO) -> PerceptionObservationDTO:
-        if hasattr(self.execution_engine, "capture_observation"):
-            return self.execution_engine.capture_observation(request.device, **request.arguments)
         try:
-            payload = self.execution_engine.capture(request.device, **request.arguments)
-            return self.observation_factory.from_capture(request.device, payload)
-        except Exception as error:
-            return self.observation_factory.from_error(request.device, error)
+            # 1. Perform workspace file listing
+            files = self.workspace_ctx.list_dir()
+            file_names = [f["name"] for f in files]
+            dir_summary = f"Root directory files: {', '.join(file_names[:20])}"
+            bundle.observations.append(
+                self.observation_factory.from_capture("list_dir", dir_summary)
+            )
 
-    def _normalize_capture_requests(self, devices_to_query: Iterable[Any]) -> List[PerceptionCaptureRequestDTO]:
-        requests: List[PerceptionCaptureRequestDTO] = []
-        for item in devices_to_query:
-            if isinstance(item, PerceptionCaptureRequestDTO):
-                requests.append(item)
-            elif isinstance(item, str):
-                requests.append(PerceptionCaptureRequestDTO(device=item))
-            elif isinstance(item, dict):
-                device = item.get("device") or item.get("name")
-                if not device:
-                    raise ValueError("Perception capture request dictionaries require a 'device' or 'name' key.")
-                arguments = item.get("arguments") or item.get("kwargs") or {}
-                requests.append(PerceptionCaptureRequestDTO(device=device, arguments=dict(arguments)))
-            else:
-                raise TypeError(f"Unsupported perception capture request: {type(item).__name__}")
-        return requests
+            # 2. Grep search using query keywords
+            keywords = [w.strip("?,.!") for w in problem.split() if len(w) > 3]
+            grep_results = []
+            for kw in keywords[:3]:  # search up to 3 keywords
+                res = self.workspace_ctx.grep_search(kw)
+                if res:
+                    grep_results.extend(res[:5])
+            
+            if grep_results:
+                grep_summary = "Relevant code search hits:\n" + "\n".join(
+                    [f"- {r['file']}:{r['line_number']}: {r['content'][:100]}" for r in grep_results[:8]]
+                )
+                bundle.observations.append(
+                    self.observation_factory.from_capture("grep_search", grep_summary)
+                )
+            
+        except Exception as e:
+            logger.error(f"Workspace perception capture error: {e}")
+            bundle.observations.append(self.observation_factory.from_error("workspace", e))
+            
+        return bundle
 
     def _build_response(
         self,
@@ -228,7 +292,9 @@ class Mothership:
 
         reasoning_summary = self._summarize_reasoning(source_thoughts)
         if not decision and source_thoughts:
-            decision = source_thoughts[-1].thought_body
+            latest_thought = source_thoughts[-1]
+            decision = latest_thought.parsed_decision or latest_thought.thought_body
+            confidence = latest_thought.confidence
 
         return MothershipResponseDTO(
             decision=decision,

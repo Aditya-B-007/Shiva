@@ -12,6 +12,7 @@ except ImportError:
         from src.brain.emotionalHandlerAndStore.emotionInterface import IMemoryEngine
 
 
+from .algorithms.CreditAssigner import CreditAssigner
 from .algorithms.Consolidator import Consolidator
 from .algorithms.DreamGenerator import DreamGenerator
 from .algorithms.ForgettingModel import ForgettingModel
@@ -43,8 +44,10 @@ class MemoryEngine(IMemoryEngine):
             identity_updater=IdentityUpdater(),
             dream_generator=DreamGenerator(),
         )
+        self._credit_assigner = CreditAssigner()
         self._repository = repository
         self._last_stored_id: str | None = None
+        self._current_episode_trajectory: list[str] = []
 
     def store(
         self,
@@ -55,6 +58,7 @@ class MemoryEngine(IMemoryEngine):
     ) -> MemoryNodeDTO:
         node = self._encoder.encode(perception, emotion, homeostasis, context)
         self._graph.add_node(node)
+        self._current_episode_trajectory.append(node.id)
         if self._last_stored_id is not None:
             self._graph.connect(
                 self._last_stored_id,
@@ -68,6 +72,14 @@ class MemoryEngine(IMemoryEngine):
             self._repository.save_node(node)
             self._save_edges_for(node.id)
         return self._node_to_dto(node)
+
+    def clear_trajectory(self) -> None:
+        self._current_episode_trajectory.clear()
+
+    def assign_credit_for_episode(self, reward: float) -> None:
+        self._credit_assigner.assign_credit(self._graph, self._current_episode_trajectory, reward)
+        self.save()
+        self.clear_trajectory()
 
     def retrieve(self, query: Any, limit: int = 5) -> RetrievalDTO:
         if limit <= 0:
@@ -145,6 +157,10 @@ class MemoryEngine(IMemoryEngine):
     def save(self) -> None:
         if self._repository is not None:
             self._repository.save_graph(self._graph)
+
+    def assign_credit(self, trajectory: list[str], final_reward: float) -> None:
+        self._credit_assigner.assign_credit(self._graph, trajectory, final_reward)
+        self.save()
 
     def graph_snapshot(self) -> MemoryGraphDTO:
         return MemoryGraphDTO(

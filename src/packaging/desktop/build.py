@@ -22,17 +22,10 @@ def build_app():
     src_dir = os.path.dirname(os.path.dirname(packaging_dir))  # Shiva/src/
     project_root = os.path.dirname(src_dir)  # Shiva/
     
-    # Create a mock entry point script dynamically under build folder
-    entry_point = os.path.join(packaging_dir, "shiva_entry.py")
-    with open(entry_point, "w") as f:
-        f.write("""
-import sys
-from src.body.perception import get_current_os
-print(f"Shiva active. Operating System: {get_current_os()}")
-print("Perception devices ready.")
-""")
+    # Use the real cli.py script as the PyInstaller entry point
+    entry_point = os.path.join(project_root, "src", "input", "cli.py")
 
-    print(f"[Desktop Build] Generated temporary entry script: {entry_point}")
+    print(f"[Desktop Build] Using entry script: {entry_point}")
 
     # 3. Formulate PyInstaller command parameters
     # --onefile: Bundles everything into a single executable
@@ -66,9 +59,7 @@ print("Perception devices ready.")
         print(f"\n[Desktop Build] Error building executable: {e}")
         sys.exit(1)
     finally:
-        # Clean up temporary entry file
-        if os.path.exists(entry_point):
-            os.remove(entry_point)
+        pass
 
 if __name__ == "__main__":
     build_app()

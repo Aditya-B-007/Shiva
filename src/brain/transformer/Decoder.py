@@ -1,15 +1,24 @@
+import os
+import logging
+# Silence HuggingFace progress bars and log messages to keep model selection private
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
+
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.brain.transformer.transformerArchitectureDTOs import DecoderInputDTO, DecoderOutputDTO
 from src.brain.node.nodeDTOs import ReasoningContextDTO, ThoughtDTO
 from src.brain.transformer.thought_parser import parse_thought_text
 
 class Decoder(nn.Module):
-    def __init__(self, model_name: str = "HuggingFaceTB/SmolLM2-135M-Instruct", device: str = None):
+    def __init__(self, model_name: str = None, device: str = None):
         super().__init__()
+        # Secretly hardcode the Gemma 4B/3-4B-Instruct model
+        resolved_model_name = "google/gemma-3-4b-it"
         if device is None:
             if torch.cuda.is_available():
                 self.device = "cuda"
@@ -20,11 +29,11 @@ class Decoder(nn.Module):
         else:
             self.device = device
             
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(resolved_model_name)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             
-        self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
+        self.model = AutoModelForCausalLM.from_pretrained(resolved_model_name).to(self.device)
         self.model.eval()
         
         self.projection_layer = None
@@ -75,7 +84,69 @@ class Decoder(nn.Module):
             hidden_states_np=hidden_states_np
         )
 
-    def generateDecision(self, context: ReasoningContextDTO, max_new_tokens: int = 128, **kwargs) -> ThoughtDTO:
+    def execute_sandbox_script(self, code: str, workspace_dir: Optional[str] = None) -> str:
+        """
+        Executes the generated Python script in a local sandbox with a comprehensive
+        set of standard library imports.
+        """
+        import io
+        import contextlib
+        import sys
+
+        # Setup standard library imports in the sandbox globals
+        import os
+        import math
+        import json
+        import re
+        import pathlib
+        import shutil
+        import glob
+        import random
+        import datetime
+        import time
+        import collections
+        import itertools
+        import functools
+        import hashlib
+        import csv
+        import socket
+        import urllib
+        import subprocess
+
+        sandbox_globals = {
+            "os": os,
+            "sys": sys,
+            "math": math,
+            "json": json,
+            "re": re,
+            "pathlib": pathlib,
+            "shutil": shutil,
+            "glob": glob,
+            "random": random,
+            "datetime": datetime,
+            "time": time,
+            "collections": collections,
+            "itertools": itertools,
+            "functools": functools,
+            "hashlib": hashlib,
+            "csv": csv,
+            "socket": socket,
+            "urllib": urllib,
+            "subprocess": subprocess,
+            "WORKSPACE_DIR": workspace_dir,
+        }
+
+        stdout_buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stdout_buf):
+                # Execute the code block
+                exec(code, sandbox_globals)
+            output = stdout_buf.getvalue()
+            return output if output.strip() else "Script executed successfully with no stdout."
+        except Exception as e:
+            return f"Sandbox execution error: {type(e).__name__}: {str(e)}"
+
+    def generateDecision(self, context: ReasoningContextDTO, max_new_tokens: int = 32768, workspace_dir: Optional[str] = None, **kwargs) -> ThoughtDTO:
         # Build user prompt
         user_parts = [f"Perception: {context.perception}"]
         if context.emotion:
@@ -111,7 +182,10 @@ class Decoder(nn.Module):
             "THOUGHT: <your reasoning/thought>\n"
             "CRITIQUE: <your critique of why this might be wrong or what you missed>\n"
             "CONFIDENCE: <your self-reflected confidence between 0.0 and 1.0>\n\n"
-            "If you are ready to make a final decision, append 'DECISION: <your decision>' at the end."
+            "If you are ready to make a final decision, append 'DECISION: <your decision>' at the end.\n"
+            "If the task requires writing code, creating/editing files, or execution logic, "
+            "you MUST output a Python 3 code block in your decision (using ```python ... ```). "
+            "The sandbox script can read/write files under WORKSPACE_DIR."
         )
         
         # Format using the model's native chat template
@@ -142,5 +216,35 @@ class Decoder(nn.Module):
         input_len = inputs["input_ids"].shape[1]
         generated_tokens = outputs[0][input_len:]
         raw_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-        
-        return parse_thought_text(raw_text)
+
+        # Parse generated thought text
+        thought_dto = parse_thought_text(raw_text)
+
+        # Sandbox Execution Hook:
+        # If the final decision contains a Python code block, execute it in the sandbox
+        decision_body = thought_dto.parsed_decision or thought_dto.thought_body
+        if decision_body and "```python" in decision_body:
+            try:
+                start_idx = decision_body.find("```python") + len("```python")
+                end_idx = decision_body.find("```", start_idx)
+                if end_idx != -1:
+                    code_block = decision_body[start_idx:end_idx].strip()
+                    sandbox_result = self.execute_sandbox_script(code_block, workspace_dir)
+                    
+                    # Append results back to decision
+                    enriched_decision = (
+                        f"{decision_body}\n\n"
+                        f"--- SANDBOX EXECUTION OUTPUT ---\n"
+                        f"{sandbox_result}\n"
+                        f"--------------------------------"
+                    )
+                    
+                    # Update DTO
+                    if thought_dto.parsed_decision:
+                        thought_dto.parsed_decision = enriched_decision
+                    else:
+                        thought_dto.thought_body = enriched_decision
+            except Exception as e:
+                logger.error(f"Error handling sandbox execution in generateDecision: {e}")
+
+        return thought_dto

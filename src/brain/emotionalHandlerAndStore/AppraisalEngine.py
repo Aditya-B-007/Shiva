@@ -47,7 +47,7 @@ from dataclasses import dataclass
 @dataclass
 class TransformerConfig:
     vocab_size: int = 32000
-    max_sequence_length: int = 2048
+    max_sequence_length: int = 32768
     vector_size: int = 2048
     num_heads: int = 8
     num_layers: int = 18
@@ -469,7 +469,7 @@ class CognitiveStateEncoder(nn.Module):
         device = self.encoder.device
         
         self.vector_size = self.config.vector_size
-        self.bert_dim = self.encoder.model.config.hidden_size
+        self.bert_dim = int(os.getenv("SHIVA_ENCODER_HIDDEN_SIZE", "1024"))
         
         self.proj_in = nn.Linear(self.vector_size, self.bert_dim).to(device)
         self.proj_out = nn.Linear(self.bert_dim, self.vector_size).to(device)

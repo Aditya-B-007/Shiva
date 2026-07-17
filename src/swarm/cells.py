@@ -4,8 +4,7 @@ from src.brain.node.nodeDTOs import ThoughtDTO, NodeReasoningResultDTO
 from src.brain.node.scratchPad import ScratchPad
 from src.brain.node.chainOfThought import ChainOfThought
 from src.brain.node.nodeProcessingEngine import nodeProcessingEngine
-from src.body.perception.perceptionDTOs import PerceptionBundleDTO
-from src.body.perception.perceptionFormatter import PerceptionPromptFormatter
+from src.input.hook.perception import PerceptionBundleDTO, PerceptionPromptFormatter
 
 class CorticalColumn(ABC):
     def __init__(self, column_id: int, memory_engine: Any, emotion_handler: Any, scheduler: Any):
@@ -52,11 +51,15 @@ class CorticalColumn(ABC):
 
     def activate(self, perception: Any, working_history: List[ThoughtDTO] = None) -> NodeReasoningResultDTO:
         formatted_perception = self._format_for_reasoning(perception)
+        kwargs = dict(self.search_policy)
+        if hasattr(self, "workspace_dir") and self.workspace_dir:
+            kwargs["workspace_dir"] = self.workspace_dir
+            
         return self.engine.process(
             formatted_perception,
             seed_thoughts=working_history or [],
             memories=self.retrieve_context(perception),
-            decoder_kwargs=dict(self.search_policy),
+            decoder_kwargs=kwargs,
         )
 
     def _format_for_reasoning(self, perception: Any) -> str:
@@ -84,7 +87,7 @@ class AnalyticalColumn(CorticalColumn):
         
     @property
     def search_policy(self) -> Dict[str, Any]:
-        return {"temperature": 0.1, "top_p": 0.85, "max_new_tokens": 128}
+        return {"temperature": 0.1, "top_p": 0.85, "max_new_tokens": 32768}
 
 
 class CreativeColumn(CorticalColumn):
@@ -94,7 +97,7 @@ class CreativeColumn(CorticalColumn):
         
     @property
     def search_policy(self) -> Dict[str, Any]:
-        return {"temperature": 0.85, "top_p": 0.95, "max_new_tokens": 160}
+        return {"temperature": 0.85, "top_p": 0.95, "max_new_tokens": 32768}
 
 
 class RiskColumn(CorticalColumn):
@@ -104,7 +107,7 @@ class RiskColumn(CorticalColumn):
         
     @property
     def search_policy(self) -> Dict[str, Any]:
-        return {"temperature": 0.2, "top_p": 0.90, "max_new_tokens": 128}
+        return {"temperature": 0.2, "top_p": 0.90, "max_new_tokens": 32768}
 
 
 class VerificationColumn(CorticalColumn):
@@ -114,4 +117,4 @@ class VerificationColumn(CorticalColumn):
         
     @property
     def search_policy(self) -> Dict[str, Any]:
-        return {"temperature": 0.05, "top_p": 0.80, "max_new_tokens": 96}
+        return {"temperature": 0.05, "top_p": 0.80, "max_new_tokens": 32768}

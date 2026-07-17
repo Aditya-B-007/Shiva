@@ -119,14 +119,25 @@ DOMINANT_EMOTIONS: Tuple[str, ...] = (
 
 
 #============HELPER FUNCTIONS===============
+DEFAULT_EMOTION_EMBEDDING_DIM = 64
+DEFAULT_EMOTION_LATENT_DIM = 64
+DEFAULT_EMOTION_HIDDEN_DIM = 128
+DEFAULT_EMOTION_DROPOUT = 0.1
+DEFAULT_EMOTION_MODEL_NAME = "distilbert-base-uncased"
+DEFAULT_EMOTION_DEVICE = "cpu"
+DEFAULT_EMOTION_CHECKPOINT_PATH = "emotion_model.pt"
+
+
 def _env_bool(name: str, default: str) -> bool:
     value = os.getenv(name, default).strip().lower()
     return value in {"1", "true", "yes", "on"}
 
 
-def _env_int(name: str) -> int:
+def _env_int(name: str, default: Optional[int] = None) -> int:
     value = os.getenv(name)
     if value is None:
+        if default is not None:
+            return default
         raise ValueError(f"Missing required environment variable: {name}")
     try:
         return int(value)
@@ -134,9 +145,11 @@ def _env_int(name: str) -> int:
         raise ValueError(f"Environment variable {name} must be an integer") from exc
 
 
-def _env_float(name: str) -> float:
+def _env_float(name: str, default: Optional[float] = None) -> float:
     value = os.getenv(name)
     if value is None:
+        if default is not None:
+            return default
         raise ValueError(f"Missing required environment variable: {name}")
     try:
         return float(value)
@@ -144,9 +157,11 @@ def _env_float(name: str) -> float:
         raise ValueError(f"Environment variable {name} must be a float") from exc
 
 
-def _env_str(name: str) -> str:
+def _env_str(name: str, default: Optional[str] = None) -> str:
     value = os.getenv(name)
     if value is None or not value.strip():
+        if default is not None:
+            return default
         raise ValueError(f"Missing required environment variable: {name}")
     return value.strip()
 
@@ -223,7 +238,10 @@ class EmotionEmbedding(nn.Module):
     ) -> None:
         super().__init__()
         self.feature_names = list(feature_names or EmotionInputBuilder().feature_names)
-        self.embedding_dim = embedding_dim if embedding_dim is not None else _env_int("EMOTION_EMBEDDING_DIM")
+        self.embedding_dim = embedding_dim if embedding_dim is not None else _env_int(
+            "EMOTION_EMBEDDING_DIM",
+            DEFAULT_EMOTION_EMBEDDING_DIM,
+        )
 
         self.projections = nn.ModuleList([
             nn.Linear(1, self.embedding_dim) for _ in self.feature_names
@@ -275,10 +293,15 @@ class EmotionModel(nn.Module):
     ) -> None:
 
         super().__init__()
-        self.model_name = model_name or _env_str("EMOTION_MODEL_NAME")
-        self.device = torch.device(device or _env_str("EMOTION_DEVICE"))
-        self.checkpoint_path = Path(checkpoint_path or _env_str("EMOTION_CHECKPOINT_PATH"))
-        self.latent_dim = latent_dim if latent_dim is not None else _env_int("EMOTION_LATENT_DIM")
+        self.model_name = model_name or _env_str("EMOTION_MODEL_NAME", DEFAULT_EMOTION_MODEL_NAME)
+        self.device = torch.device(device or _env_str("EMOTION_DEVICE", DEFAULT_EMOTION_DEVICE))
+        self.checkpoint_path = Path(
+            checkpoint_path or _env_str("EMOTION_CHECKPOINT_PATH", DEFAULT_EMOTION_CHECKPOINT_PATH)
+        )
+        self.latent_dim = latent_dim if latent_dim is not None else _env_int(
+            "EMOTION_LATENT_DIM",
+            DEFAULT_EMOTION_LATENT_DIM,
+        )
         self.fp16 = _env_bool("EMOTION_FP16", "false") if fp16 is None else fp16
         self.bf16 = _env_bool("EMOTION_BF16", "false") if bf16 is None else bf16
         self.backbone: Optional[nn.Module] = None
@@ -299,7 +322,7 @@ class EmotionModel(nn.Module):
             raise RuntimeError(f"Failed to load emotion backbone model {self.model_name!r}") from exc
 
         hidden_size = self._resolve_hidden_size(self.backbone)
-        embedding_dim = _env_int("EMOTION_EMBEDDING_DIM")
+        embedding_dim = _env_int("EMOTION_EMBEDDING_DIM", DEFAULT_EMOTION_EMBEDDING_DIM)
         self.input_projection = nn.Identity() if embedding_dim == hidden_size else nn.Linear(embedding_dim, hidden_size)
         self.output_projection = nn.Identity() if hidden_size == self.latent_dim else nn.Linear(hidden_size, self.latent_dim)
         super().to(self.device)
@@ -416,9 +439,18 @@ class EmotionGenerator(nn.Module):
         emotion_names: Sequence[str] = DOMINANT_EMOTIONS,
     ) -> None:
         super().__init__()
-        self.latent_dim = latent_dim if latent_dim is not None else _env_int("EMOTION_LATENT_DIM")
-        self.hidden_dim = hidden_dim if hidden_dim is not None else _env_int("EMOTION_HIDDEN_DIM")
-        self.dropout = dropout if dropout is not None else _env_float("EMOTION_DROPOUT")
+        self.latent_dim = latent_dim if latent_dim is not None else _env_int(
+            "EMOTION_LATENT_DIM",
+            DEFAULT_EMOTION_LATENT_DIM,
+        )
+        self.hidden_dim = hidden_dim if hidden_dim is not None else _env_int(
+            "EMOTION_HIDDEN_DIM",
+            DEFAULT_EMOTION_HIDDEN_DIM,
+        )
+        self.dropout = dropout if dropout is not None else _env_float(
+            "EMOTION_DROPOUT",
+            DEFAULT_EMOTION_DROPOUT,
+        )
         self.emotion_names = tuple(emotion_names)
         self.scalar_names = tuple(name for name in EMOTION_SCALARS if name != "emotional_intensity")
         output_dim = len(self.scalar_names) + 1 + len(self.emotion_names)

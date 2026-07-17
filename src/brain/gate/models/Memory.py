@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 from src.brain.emotionalHandlerAndStore.emotionalContract import EmotionDTO
 
@@ -8,6 +9,6 @@ class Memory:
     id: str
     content: str
     confidence: float
-    created_at: float
-    promoted_at: float
+    created_at: datetime
+    promoted_at: datetime
     emotion: Optional[EmotionDTO] = None

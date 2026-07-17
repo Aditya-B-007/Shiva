@@ -1,5 +1,6 @@
 import json
 import dataclasses
+from datetime import datetime
 from typing import List, Optional
 from ...gate.interfaces.MemoryRepository import MemoryRepository
 from ...gate.models.Memory import Memory
@@ -31,6 +32,32 @@ class SQLiteMemoryRepository(MemoryRepository):
         except Exception:
             return None
 
+    def _serialize_datetime(self, value: datetime | float | int | str | None) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, (int, float)):
+            return datetime.utcfromtimestamp(float(value)).isoformat()
+        return str(value)
+
+    def _deserialize_datetime(self, value: object) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, (int, float)):
+            return datetime.utcfromtimestamp(float(value))
+        if isinstance(value, str) and value:
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                try:
+                    return datetime.utcfromtimestamp(float(value))
+                except ValueError:
+                    return None
+        return None
+
     def save(self, memory: Memory) -> None:
         conn = self.manager.get_connection()
         conn.execute(
@@ -42,8 +69,8 @@ class SQLiteMemoryRepository(MemoryRepository):
                 memory.id,
                 memory.content,
                 memory.confidence,
-                memory.created_at,
-                memory.promoted_at,
+                self._serialize_datetime(memory.created_at),
+                self._serialize_datetime(memory.promoted_at),
                 self._serialize_emotion(memory.emotion)
             )
         )
@@ -60,8 +87,8 @@ class SQLiteMemoryRepository(MemoryRepository):
             id=row["id"],
             content=row["content"],
             confidence=row["confidence"],
-            created_at=row["created_at"],
-            promoted_at=row["promoted_at"],
+            created_at=self._deserialize_datetime(row["created_at"]),
+            promoted_at=self._deserialize_datetime(row["promoted_at"]),
             emotion=self._deserialize_emotion(row["emotion"])
         )
 
@@ -94,8 +121,8 @@ class SQLiteMemoryRepository(MemoryRepository):
                 id=row["id"],
                 content=row["content"],
                 confidence=row["confidence"],
-                created_at=row["created_at"],
-                promoted_at=row["promoted_at"],
+                created_at=self._deserialize_datetime(row["created_at"]),
+                promoted_at=self._deserialize_datetime(row["promoted_at"]),
                 emotion=self._deserialize_emotion(row["emotion"])
             )
             for row in rows

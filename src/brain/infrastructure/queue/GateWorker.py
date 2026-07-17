@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 import logging
 import threading
 import queue
@@ -71,8 +72,8 @@ class GateWorker:
                 id=request.entry_id,
                 content=request.content or "",
                 confidence=request.confidence or 0.0,
-                created_at=time.time(),
-                updated_at=time.time(),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
                 emotion=request.emotion
             )
             self.scratch_gate.save(entry)
@@ -80,13 +81,13 @@ class GateWorker:
             
         elif request.action == "UPDATE":
             existing = self.scratch_gate.load(request.entry_id)
-            created_at = existing.created_at if existing else time.time()
+            created_at = existing.created_at if existing else datetime.utcnow()
             entry = ScratchEntry(
                 id=request.entry_id,
                 content=request.content if request.content is not None else (existing.content if existing else ""),
                 confidence=request.confidence if request.confidence is not None else (existing.confidence if existing else 0.0),
                 created_at=created_at,
-                updated_at=time.time(),
+                updated_at=datetime.utcnow(),
                 emotion=request.emotion if request.emotion is not None else (existing.emotion if existing else None)
             )
             self.scratch_gate.update(entry)
@@ -106,7 +107,7 @@ class GateWorker:
                 content=entry.content,
                 confidence=entry.confidence,
                 created_at=entry.created_at,
-                promoted_at=time.time(),
+                promoted_at=datetime.utcnow(),
                 emotion=entry.emotion
             )
             self.memory_gate.save(memory)
