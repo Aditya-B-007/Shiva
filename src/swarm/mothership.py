@@ -4,15 +4,19 @@ import time
 import threading
 from typing import Any, List, Dict, Iterable, Optional
 from src.swarm.cells import AnalyticalColumn, CreativeColumn, RiskColumn, VerificationColumn, CorticalColumn
-from src.brain.node.nodeDTOs import BrainErrorDTO, NodeReasoningResultDTO, ThoughtDTO
-from src.input.hook.perception import (
+from src.transferDTO import (
+    BrainErrorDTO,
+    NodeReasoningResultDTO,
+    ThoughtDTO,
     PerceptionBundleDTO,
     PerceptionCaptureRequestDTO,
     PerceptionObservationDTO,
+    MothershipResponseDTO,
+)
+from src.input.hook.perception import (
     PerceptionObservationFactory,
     PerceptionPromptFormatter,
 )
-from src.swarm.swarmDTOs import MothershipResponseDTO
 
 logger = logging.getLogger("shiva.swarm.mothership")
 

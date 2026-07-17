@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
-from src.brain.node.nodeDTOs import ThoughtDTO, NodeReasoningResultDTO
+from src.transferDTO import ThoughtDTO, NodeReasoningResultDTO, PerceptionBundleDTO
 from src.brain.node.scratchPad import ScratchPad
 from src.brain.node.chainOfThought import ChainOfThought
 from src.brain.node.nodeProcessingEngine import nodeProcessingEngine
-from src.input.hook.perception import PerceptionBundleDTO, PerceptionPromptFormatter
+from src.input.hook.perception import PerceptionPromptFormatter
 
 class CorticalColumn(ABC):
     def __init__(self, column_id: int, memory_engine: Any, emotion_handler: Any, scheduler: Any):

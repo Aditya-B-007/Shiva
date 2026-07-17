@@ -10,8 +10,7 @@ import torch.nn as nn
 import numpy as np
 from typing import Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from src.brain.transformer.transformerArchitectureDTOs import DecoderInputDTO, DecoderOutputDTO
-from src.brain.node.nodeDTOs import ReasoningContextDTO, ThoughtDTO
+from src.transferDTO import DecoderInputDTO, DecoderOutputDTO, ReasoningContextDTO, ThoughtDTO
 from src.brain.transformer.thought_parser import parse_thought_text
 
 class Decoder(nn.Module):

@@ -1,7 +1,7 @@
 import threading
 from contextlib import contextmanager
 from typing import Any, Optional, Dict, List
-from src.brain.node.nodeDTOs import BrainErrorDTO, NodeReasoningResultDTO, ThoughtDTO, ReasoningContextDTO
+from src.transferDTO import BrainErrorDTO, NodeReasoningResultDTO, ThoughtDTO, ReasoningContextDTO
 
 class ReasoningScheduler:
     def __init__(self, decoder: Any):

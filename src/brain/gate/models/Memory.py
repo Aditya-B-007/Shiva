@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-from src.brain.emotionalHandlerAndStore.emotionalContract import EmotionDTO
+from src.transferDTO import EmotionDTO
 
 @dataclass
 class Memory:

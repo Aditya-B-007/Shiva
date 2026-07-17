@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from ...gate.interfaces.MemoryRepository import MemoryRepository
 from ...gate.models.Memory import Memory
-from ...emotionalHandlerAndStore.emotionalContract import EmotionDTO
+from src.transferDTO import EmotionDTO
 from .SQLiteManager import SQLiteManager
 
 class SQLiteMemoryRepository(MemoryRepository):

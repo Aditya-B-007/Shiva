@@ -1,7 +1,7 @@
 import torch
 from typing import Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModel
-from src.brain.transformer.transformerArchitectureDTOs import EncoderInputDTO, EncoderOutputDTO
+from src.transferDTO import EncoderInputDTO, EncoderOutputDTO
 
 class Encoder:
     def __init__(self, model_name: str = "google-bert/bert-large-uncased", device: Optional[str] = None):

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from src.brain.node.nodeDTOs import ThoughtDTO, ReasoningContextDTO
+from src.transferDTO import ThoughtDTO, ReasoningContextDTO
 
 
 @dataclass

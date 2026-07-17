@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from ...gate.interfaces.ScratchRepository import ScratchRepository
 from ...gate.models.ScratchEntry import ScratchEntry
-from ...emotionalHandlerAndStore.emotionalContract import EmotionDTO
+from src.transferDTO import EmotionDTO
 from .SQLiteManager import SQLiteManager
 
 class SQLiteScratchRepository(ScratchRepository):

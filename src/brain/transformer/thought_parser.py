@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict
 
-from src.brain.node.nodeDTOs import ThoughtDTO, ThoughtParseDiagnosticsDTO
+from src.transferDTO import ThoughtDTO, ThoughtParseDiagnosticsDTO
 
 
 THOUGHT_TAG_PATTERN = re.compile(

@@ -17,25 +17,7 @@ try:
 except ImportError:  # pragma: no cover - handled with a clear runtime error in load_model.
     AutoModel = None  # type: ignore[assignment]
 
-try:
-    from transferDTO import Latent, TokenBundle, Tokens
-except ImportError:
-    try:
-        from ...transferDTO import Latent, TokenBundle, Tokens
-    except ImportError:
-        from src.transferDTO import Latent, TokenBundle, Tokens
-
-try:
-    from emotionalContract import AppraisalDTO, EmotionDTO, HomeostasisDTO
-except ImportError:
-    try:
-        from .emotionalContract import AppraisalDTO, EmotionDTO, HomeostasisDTO
-    except ImportError:
-        from src.brain.emotionalHandlerAndStore.emotionalContract import (
-            AppraisalDTO,
-            EmotionDTO,
-            HomeostasisDTO,
-        )
+from src.transferDTO import Latent, TokenBundle, Tokens, AppraisalDTO, EmotionDTO, HomeostasisDTO
 
 try:
     from emotionInterface import IEmotionDynamics

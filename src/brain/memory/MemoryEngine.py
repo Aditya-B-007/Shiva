@@ -19,9 +19,7 @@ from .algorithms.ForgettingModel import ForgettingModel
 from .algorithms.IdentityUpdater import IdentityUpdater
 from .algorithms.MemoryEncoder import MemoryEncoder
 from .algorithms.SleepCycle import SleepCycle, SleepCycleResult
-from .dto.MemoryGraphDTO import MemoryGraphDTO
-from .dto.MemoryNodeDTO import MemoryEdgeDTO, MemoryNodeDTO
-from .dto.RetrievalDTO import RetrievalDTO
+from src.transferDTO import MemoryGraphDTO, MemoryEdgeDTO, MemoryNodeDTO, RetrievalDTO
 from .graph.MemoryEdge import AssociationType, MemoryEdge
 from .graph.MemoryGraph import MemoryGraph
 from .graph.MemoryNode import MemoryNode, MemoryStatus, clamp_unit

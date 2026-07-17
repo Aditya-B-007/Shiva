@@ -6,41 +6,23 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import psutil
 
-# Setup robust imports to handle relative and absolute imports in python paths
 try:
     from emotionInterface import IAppraisal, IFeatureEmbedding
-    from emotionalContract import (
-        EventType,
-        FeatureBundle,
-        NumericalFeatureVector,
-        AppraisalDTO
-    )
 except ImportError:
     try:
         from .emotionInterface import IAppraisal, IFeatureEmbedding
-        from .emotionalContract import (
-            EventType,
-            FeatureBundle,
-            NumericalFeatureVector,
-            AppraisalDTO
-        )
     except ImportError:
         from src.brain.emotionalHandlerAndStore.emotionInterface import IAppraisal, IFeatureEmbedding
-        from src.brain.emotionalHandlerAndStore.emotionalContract import (
-            EventType,
-            FeatureBundle,
-            NumericalFeatureVector,
-            AppraisalDTO
-        )
 
-# Import simplified generic DTOs from transferDTO
-try:
-    from transferDTO import Tokens, TokenBundle, Latent
-except ImportError:
-    try:
-        from ...transferDTO import Tokens, TokenBundle, Latent
-    except ImportError:
-        from src.transferDTO import Tokens, TokenBundle, Latent
+from src.transferDTO import (
+    EventType,
+    FeatureBundle,
+    NumericalFeatureVector,
+    AppraisalDTO,
+    Tokens,
+    TokenBundle,
+    Latent,
+)
 
 from dataclasses import dataclass
 
@@ -239,10 +221,6 @@ class FeatureExtractor:
         if p:
             if p.text_embedding is not None:
                 embeddings["text_embedding"] = p.text_embedding
-            if p.vision_embedding is not None:
-                embeddings["vision_embedding"] = p.vision_embedding
-            if p.audio_embedding is not None:
-                embeddings["audio_embedding"] = p.audio_embedding
         return embeddings
 
     def _produce_vector(

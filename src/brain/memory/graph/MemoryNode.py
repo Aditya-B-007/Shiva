@@ -9,8 +9,6 @@ from uuid import uuid4
 
 class MemoryModality(str, Enum):
     TEXT = "TEXT"
-    IMAGE = "IMAGE"
-    AUDIO = "AUDIO"
     ACTION = "ACTION"
     SENSOR = "SENSOR"
 
