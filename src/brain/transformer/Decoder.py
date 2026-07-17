@@ -28,11 +28,18 @@ class Decoder(nn.Module):
         else:
             self.device = device
             
-        self.tokenizer = AutoTokenizer.from_pretrained(resolved_model_name)
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(resolved_model_name, local_files_only=True)
+        except Exception:
+            self.tokenizer = AutoTokenizer.from_pretrained(resolved_model_name, local_files_only=False)
+            
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             
-        self.model = AutoModelForCausalLM.from_pretrained(resolved_model_name).to(self.device)
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(resolved_model_name, local_files_only=True).to(self.device)
+        except Exception:
+            self.model = AutoModelForCausalLM.from_pretrained(resolved_model_name, local_files_only=False).to(self.device)
         self.model.eval()
         
         self.projection_layer = None
@@ -84,15 +91,9 @@ class Decoder(nn.Module):
         )
 
     def execute_sandbox_script(self, code: str, workspace_dir: Optional[str] = None) -> str:
-        """
-        Executes the generated Python script in a local sandbox with a comprehensive
-        set of standard library imports.
-        """
         import io
         import contextlib
         import sys
-
-        # Setup standard library imports in the sandbox globals
         import os
         import math
         import json
@@ -183,7 +184,7 @@ class Decoder(nn.Module):
             "CONFIDENCE: <your self-reflected confidence between 0.0 and 1.0>\n\n"
             "If you are ready to make a final decision, append 'DECISION: <your decision>' at the end.\n"
             "If the task requires writing code, creating/editing files, or execution logic, "
-            "you MUST output a Python 3 code block in your decision (using ```python ... ```). "
+            "you MUST output a Python 3.9 code block in your decision (using ```python ... ```). "
             "The sandbox script can read/write files under WORKSPACE_DIR."
         )
         
@@ -193,6 +194,8 @@ class Decoder(nn.Module):
             {"role": "user", "content": user_content}
         ]
         
+        latent_action = kwargs.pop("latent_action", None)
+
         prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         
@@ -206,21 +209,53 @@ class Decoder(nn.Module):
         }
         generation_kwargs.update(kwargs)
 
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                **generation_kwargs,
-            )
+        if latent_action is not None:
+            # 1. Project latent action vector to model hidden size
+            if isinstance(latent_action, np.ndarray):
+                latent_action_t = torch.from_numpy(latent_action).float().to(self.device)
+            else:
+                latent_action_t = latent_action.float().to(self.device)
             
-        input_len = inputs["input_ids"].shape[1]
-        generated_tokens = outputs[0][input_len:]
+            if latent_action_t.ndim == 1:
+                latent_action_t = latent_action_t.unsqueeze(0).unsqueeze(0)  # (1, 1, action_dim)
+            elif latent_action_t.ndim == 2:
+                latent_action_t = latent_action_t.unsqueeze(1)  # (batch, 1, action_dim)
+                
+            target_dim = self.model.config.hidden_size
+            if self.projection_layer is None or self.projection_layer.in_features != latent_action_t.shape[-1]:
+                self.projection_layer = nn.Linear(latent_action_t.shape[-1], target_dim).to(self.device)
+                nn.init.normal_(self.projection_layer.weight, std=0.02)
+                nn.init.zeros_(self.projection_layer.bias)
+                
+            latent_embed = self.projection_layer(latent_action_t)  # (1, 1, hidden_size)
+            
+            # 2. Get standard prompt token embeddings
+            token_embeds = self.model.get_input_embeddings()(inputs["input_ids"])  # (1, seq_len, hidden_size)
+            
+            # 3. Concatenate them
+            inputs_embeds = torch.cat([latent_embed, token_embeds], dim=1)
+            
+            # 4. Construct matching attention mask
+            ones = torch.ones((inputs_embeds.shape[0], 1), dtype=torch.long, device=self.device)
+            attention_mask = torch.cat([ones, inputs["attention_mask"]], dim=1)
+            
+            generation_kwargs["inputs_embeds"] = inputs_embeds
+            generation_kwargs["attention_mask"] = attention_mask
+            
+            with torch.no_grad():
+                outputs = self.model.generate(**generation_kwargs)
+            generated_tokens = outputs[0]
+        else:
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    **generation_kwargs,
+                )
+            input_len = inputs["input_ids"].shape[1]
+            generated_tokens = outputs[0][input_len:]
+
         raw_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-
-        # Parse generated thought text
         thought_dto = parse_thought_text(raw_text)
-
-        # Sandbox Execution Hook:
-        # If the final decision contains a Python code block, execute it in the sandbox
         decision_body = thought_dto.parsed_decision or thought_dto.thought_body
         if decision_body and "```python" in decision_body:
             try:
@@ -229,16 +264,12 @@ class Decoder(nn.Module):
                 if end_idx != -1:
                     code_block = decision_body[start_idx:end_idx].strip()
                     sandbox_result = self.execute_sandbox_script(code_block, workspace_dir)
-                    
-                    # Append results back to decision
                     enriched_decision = (
                         f"{decision_body}\n\n"
                         f"--- SANDBOX EXECUTION OUTPUT ---\n"
                         f"{sandbox_result}\n"
                         f"--------------------------------"
                     )
-                    
-                    # Update DTO
                     if thought_dto.parsed_decision:
                         thought_dto.parsed_decision = enriched_decision
                     else:

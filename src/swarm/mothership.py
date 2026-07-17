@@ -3,6 +3,12 @@ import logging
 import time
 import threading
 from typing import Any, List, Dict, Iterable, Optional
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import numpy as np
+from src.brain.transformer.Encoder import Encoder
 from src.swarm.cells import AnalyticalColumn, CreativeColumn, RiskColumn, VerificationColumn, CorticalColumn
 from src.transferDTO import (
     BrainErrorDTO,
@@ -64,14 +70,34 @@ class Mothership:
         self.evaporation_rate = 0.10
         self._dreaming_active = threading.Event()
 
+        # Neuro-symbolic Value network for TD learning
+        self.encoder = Encoder()
+        self._goal_projector = None
+        self._state_projector = None
+        self._value_network = None
+        self._value_optimizer = None
+
+    def _encode_text(self, text: str) -> torch.Tensor:
+        from src.transferDTO import EncoderInputDTO
+        device = self.encoder.device
+        dto = EncoderInputDTO(text=text)
+        try:
+            enc_in = self.encoder.input(dto)
+            enc_out = self.encoder.process(enc_in)
+            pooler_out = enc_out.pooler_output_pt
+            if pooler_out is None:
+                pooler_out = enc_out.last_hidden_state_pt[:, 0, :]
+            return pooler_out
+        except Exception as e:
+            logger.error(f"Error encoding text in Mothership: {e}")
+            return torch.zeros((1, 1024), device=device)
+
     def set_workspace(self, path: str) -> None:
-        """Sets the active workspace path for local codebase inspection."""
         from src.input.hook.workspace import WorkspaceContext
         self.workspace_ctx = WorkspaceContext(path)
         logger.info(f"Workspace set to: {path}")
 
     def enter_dream_state(self) -> None:
-        """Triggers the background dreaming/sleeping loop when idle."""
         if self._dreaming_active.is_set():
             return
         self._dreaming_active.set()
@@ -80,7 +106,6 @@ class Mothership:
         logger.info("[Mothership] Background dream/sleep cycle initiated.")
 
     def _dream_loop(self) -> None:
-        """Continuous sleeping/consolidation loop run on a background daemon thread."""
         while self._dreaming_active.is_set():
             try:
                 if hasattr(self.memory, "sleep"):
@@ -96,7 +121,6 @@ class Mothership:
                 time.sleep(0.1)
 
     def exit_dream_state(self) -> None:
-        """Suspends background dreaming instantly to handle incoming queries."""
         if not self._dreaming_active.is_set():
             return
         self._dreaming_active.clear()
@@ -106,14 +130,10 @@ class Mothership:
 
     def arbitrate_columns(self, cycle: int) -> List[CorticalColumn]:
         instability = abs(self.stability_regulator.theta)
-        
-        # 1. Base allocation: standard analytical and creative columns
         columns = [
             AnalyticalColumn(1, self.memory, self.emotion, self.scheduler),
             CreativeColumn(2, self.memory, self.emotion, self.scheduler)
         ]
-        
-        # 2. Reactive control allocation: if unstable, spin up risk auditing and verification
         if instability > 0.15:
             logger.info("Instability alert %.3f -> scheduling RiskColumn.", instability)
             columns.append(RiskColumn(3, self.memory, self.emotion, self.scheduler))
@@ -121,8 +141,6 @@ class Mothership:
         if instability > 0.35:
             logger.info("Critical instability %.3f -> scheduling VerificationColumn.", instability)
             columns.append(VerificationColumn(4, self.memory, self.emotion, self.scheduler))
-            
-        # Set workspace path on all columns
         if self.workspace_ctx:
             for col in columns:
                 col.workspace_dir = str(self.workspace_ctx.root_path)
@@ -137,6 +155,30 @@ class Mothership:
         # Guarantee dreaming is suspended before query execution
         self.exit_dream_state()
 
+        # Lazily initialize goal and state projectors and value network
+        device = self.encoder.device
+        if self._goal_projector is None:
+            self._goal_projector = nn.Linear(1024, 2048).to(device)
+            nn.init.normal_(self._goal_projector.weight, std=0.02)
+            nn.init.zeros_(self._goal_projector.bias)
+        if self._state_projector is None:
+            self._state_projector = nn.Linear(1024, 2048).to(device)
+            nn.init.normal_(self._state_projector.weight, std=0.02)
+            nn.init.zeros_(self._state_projector.bias)
+        if self._value_network is None:
+            self._value_network = nn.Sequential(
+                nn.Linear(4096, 256),
+                nn.ReLU(),
+                nn.Linear(256, 1)
+            ).to(device)
+            self._value_optimizer = optim.Adam(self._value_network.parameters(), lr=1e-3)
+
+        # 1. Encode goal vector
+        goal_pooler = self._encode_text(problem)
+        with torch.no_grad():
+            goal_emb_t = self._goal_projector(goal_pooler)
+            goal_emb = goal_emb_t.squeeze(0).cpu().numpy()
+
         if hasattr(self.memory, "clear_trajectory"):
             self.memory.clear_trajectory()
 
@@ -150,11 +192,24 @@ class Mothership:
 
         for cycle in range(max_cycles):
             cycles_used = cycle + 1
-            # 1. Prefrontal scheduling
+
+            # 2. Encode current state vector
+            state_text = f"Perception: {problem} | Thoughts: " + " ".join([t.thought_body for t in working_thoughts])
+            state_pooler = self._encode_text(state_text)
+            with torch.no_grad():
+                state_emb_t = self._state_projector(state_pooler)
+                state_emb = state_emb_t.squeeze(0).cpu().numpy()
+
+            # Prefrontal scheduling
             columns = self.arbitrate_columns(cycle)
             logger.info("Cycle %s active specialist columns=%s.", cycle + 1, len(columns))
 
-            # 2. Execute columns and collect results
+            # Set goal-conditioned embeddings on columns
+            for col in columns:
+                col.current_goal_emb = goal_emb
+                col.current_state_emb = state_emb
+
+            # Execute columns and collect results
             cycle_results: List[NodeReasoningResultDTO] = []
             for col in columns:
                 try:
@@ -178,24 +233,68 @@ class Mothership:
                     logger.exception("Column %s failed.", col.column_id)
                     errors.append(error)
 
+            # Calculate average step reward of cycle columns
+            step_rewards = [getattr(col, "last_step_reward", 0.0) for col in columns]
+            step_reward = float(np.mean(step_rewards)) if step_rewards else 0.0
+
             # 3. Calculate cognitive feedback signals for the stability regulator
-            # Check average confidence of columns
             valid_results = [res for res in cycle_results if res.confidence > 0.0]
             uncertainty = 1.0 - self._average([res.confidence for res in valid_results]) if valid_results else 1.0
             
-            # Stress signal from the emotional orchestrator
             stress = 0.2
             if hasattr(self.emotion, "current_homeostasis"):
                 stress_val = getattr(self.emotion.current_homeostasis(), "stress", None)
                 if stress_val is not None:
                     stress = stress_val
                 
-            # Conflict: variance/disagreement among column decisions
             decisions = [res.decision for res in cycle_results if res.decision]
             conflict = self._decision_conflict(decisions)
 
-            # Perturb the pendulum system with these cognitive states
-            self.stability_regulator.apply_cognitive_perturbations(uncertainty, stress, conflict)
+            # Compute next state embedding
+            next_state_text = f"Perception: {problem} | Thoughts: " + " ".join([t.thought_body for t in working_thoughts])
+            next_state_pooler = self._encode_text(next_state_text)
+            with torch.no_grad():
+                next_state_emb_t = self._state_projector(next_state_pooler)
+                next_state_emb = next_state_emb_t.squeeze(0).cpu().numpy()
+
+            # Compute TD Error (RPE)
+            state_goal_t = torch.cat([state_emb_t, goal_emb_t], dim=-1)
+            next_state_goal_t = torch.cat([next_state_emb_t, goal_emb_t], dim=-1)
+            
+            with torch.no_grad():
+                v_s = self._value_network(state_goal_t).item()
+                v_s_next = self._value_network(next_state_goal_t).item()
+                
+            gamma = 0.99
+            rpe = step_reward + gamma * v_s_next - v_s
+
+            # Train value network parameters using TD target MSE loss
+            td_target = torch.tensor([[step_reward + gamma * v_s_next]], device=device)
+            predicted_v = self._value_network(state_goal_t)
+            v_loss = F.mse_loss(predicted_v, td_target)
+            
+            self._value_optimizer.zero_grad()
+            v_loss.backward()
+            self._value_optimizer.step()
+            
+            logger.info(
+                "[Mothership TD] Cycle %s step_reward=%.2f V(s)=%.2f V(s')=%.2f RPE=%.2f loss=%.4f",
+                cycle + 1,
+                step_reward,
+                v_s,
+                v_s_next,
+                rpe,
+                v_loss.item()
+            )
+
+            # Perturb the pendulum system with cognitive state + RPE
+            # Negative RPE increases uncertainty/instability; positive stabilizes
+            perturbation = float(-rpe * 1.5)
+            self.stability_regulator.apply_cognitive_perturbations(
+                uncertainty=max(0.0, uncertainty + perturbation),
+                stress=stress,
+                conflict=conflict
+            )
             logger.info(
                 "Cognitive feedback uncertainty=%.2f conflict=%.2f instability=%.4f.",
                 uncertainty,
@@ -203,7 +302,7 @@ class Mothership:
                 self.stability_regulator.theta,
             )
 
-            # 4. Apply prefrontal control effort to restore stability
+            # Apply prefrontal control effort to restore stability
             control_effort = 0.0
             for res in cycle_results:
                 if res.decision and res.confidence > 0.70:
@@ -215,10 +314,9 @@ class Mothership:
             # Apply stabilizing action
             self.stability_regulator.apply_stabilizing_cortex_action(control_effort)
 
-            # 5. Merge thought history and select paths using pheromone updates
+            # Merge thought history and select paths using pheromone updates
             for res in cycle_results:
                 for t in res.thought_history:
-                    # Filter and add unique thoughts to global workspace
                     if t.raw_text not in seen_thought_texts:
                         working_thoughts.append(t)
                         seen_thought_texts.add(t.raw_text)
@@ -227,13 +325,12 @@ class Mothership:
             for k in list(self.pheromone_map.keys()):
                 self.pheromone_map[k] *= (1.0 - self.evaporation_rate)
 
-            # 6. Check for convergence / early stopping criteria
+            # Check for convergence / early stopping criteria
             if abs(self.stability_regulator.theta) < 0.05 and best_overall_result and best_overall_result.confidence > 0.85:
                 logger.info("Convergence detected in cycle %s. Stopping reasoning.", cycle + 1)
                 break
 
         if hasattr(self.memory, "assign_credit_for_episode"):
-            # Determine the final reward outcome (confidence of best result, or 0.0 if failed)
             reward = best_overall_result.confidence if best_overall_result else 0.0
             self.memory.assign_credit_for_episode(reward)
 

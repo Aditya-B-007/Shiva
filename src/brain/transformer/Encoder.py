@@ -27,8 +27,13 @@ class Encoder:
             raise RuntimeError(f"Encoder model is unavailable: {self._model_load_error}") from self._model_load_error
 
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
-            self.model = AutoModel.from_pretrained(self.model_name, local_files_only=True).to(self.device)
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
+                self.model = AutoModel.from_pretrained(self.model_name, local_files_only=True).to(self.device)
+            except Exception:
+                # Fallback to downloading from HuggingFace Hub if not cached locally
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=False)
+                self.model = AutoModel.from_pretrained(self.model_name, local_files_only=False).to(self.device)
             self.model.eval()
         except Exception as exc:
             self._model_load_error = exc
