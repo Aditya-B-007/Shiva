@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import sys
 from dataclasses import is_dataclass
 from datetime import datetime
 from pathlib import Path
@@ -298,10 +299,21 @@ class EmotionModel(nn.Module):
             raise ImportError("transformers is required to load the EmotionModel Mamba backbone")
 
         dtype = self._torch_dtype()
+        if getattr(sys, 'frozen', False):
+            project_root = os.path.dirname(sys.executable)
+        else:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        local_cache_dir = os.path.join(project_root, "models", "shiva-emotion")
+        os.makedirs(local_cache_dir, exist_ok=True)
+
         try:
-            self.backbone = AutoModel.from_pretrained(self.model_name, torch_dtype=dtype)
+            try:
+                self.backbone = AutoModel.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=True, torch_dtype=dtype)
+            except Exception:
+                print("[Shiva Engine] Downloading cognitive dynamics weights...")
+                self.backbone = AutoModel.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=False, torch_dtype=dtype)
         except Exception as exc:
-            raise RuntimeError(f"Failed to load emotion backbone model {self.model_name!r}") from exc
+            raise RuntimeError("Failed to load emotion backbone model") from exc
 
         hidden_size = self._resolve_hidden_size(self.backbone)
         embedding_dim = _env_int("EMOTION_EMBEDDING_DIM", DEFAULT_EMOTION_EMBEDDING_DIM)

@@ -1,5 +1,10 @@
 import os
 import sys
+
+# Silence HuggingFace progress bars and warning logs globally before any HF imports occur
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 import logging
 import asyncio
 import argparse

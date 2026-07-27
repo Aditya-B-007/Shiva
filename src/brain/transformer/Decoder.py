@@ -1,8 +1,12 @@
 import os
+import sys
 import logging
+
 # Silence HuggingFace progress bars and log messages to keep model selection private
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 import torch
@@ -16,10 +20,13 @@ from src.brain.transformer.thought_parser import parse_thought_text
 class Decoder(nn.Module):
     def __init__(self, model_name: str = None, device: str = None):
         super().__init__()
-        # Use a non-gated model and cache it locally in the project workspace
         resolved_model_name = "Qwen/Qwen2.5-3B-Instruct"
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        local_cache_dir = os.path.join(project_root, "models", "qwen-3b")
+        
+        if getattr(sys, 'frozen', False):
+            project_root = os.path.dirname(sys.executable)
+        else:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        local_cache_dir = os.path.join(project_root, "models", "shiva-decoder")
         
         if device is None:
             if torch.cuda.is_available():
@@ -40,7 +47,7 @@ class Decoder(nn.Module):
                 local_files_only=True
             )
         except Exception:
-            print(f"[Decoder] Downloading tokenizer for {resolved_model_name} to local cache: {local_cache_dir}...")
+            print("[Shiva Engine] Initializing cognitive tokenizer...")
             self.tokenizer = AutoTokenizer.from_pretrained(
                 resolved_model_name,
                 cache_dir=local_cache_dir,
@@ -57,7 +64,7 @@ class Decoder(nn.Module):
                 local_files_only=True
             ).to(self.device)
         except Exception:
-            print(f"[Decoder] Downloading model weights for {resolved_model_name} to local cache: {local_cache_dir} (this may take a few minutes)...")
+            print("[Shiva Engine] Downloading cognitive decoder weights (this may take a few minutes)...")
             self.model = AutoModelForCausalLM.from_pretrained(
                 resolved_model_name,
                 cache_dir=local_cache_dir,

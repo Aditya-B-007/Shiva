@@ -1,3 +1,5 @@
+import os
+import sys
 import torch
 from typing import Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModel
@@ -26,18 +28,25 @@ class Encoder:
         if self._model_load_error is not None:
             raise RuntimeError(f"Encoder model is unavailable: {self._model_load_error}") from self._model_load_error
 
+        if getattr(sys, 'frozen', False):
+            project_root = os.path.dirname(sys.executable)
+        else:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        local_cache_dir = os.path.join(project_root, "models", "shiva-encoder")
+        os.makedirs(local_cache_dir, exist_ok=True)
+
         try:
             try:
-                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
-                self.model = AutoModel.from_pretrained(self.model_name, local_files_only=True).to(self.device)
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=True)
+                self.model = AutoModel.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=True).to(self.device)
             except Exception:
-                # Fallback to downloading from HuggingFace Hub if not cached locally
-                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=False)
-                self.model = AutoModel.from_pretrained(self.model_name, local_files_only=False).to(self.device)
+                print("[Shiva Engine] Downloading cognitive encoder weights...")
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=False)
+                self.model = AutoModel.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=False).to(self.device)
             self.model.eval()
         except Exception as exc:
             self._model_load_error = exc
-            raise RuntimeError(f"Encoder model is unavailable: {exc}") from exc
+            raise RuntimeError("Encoder model is unavailable") from exc
 
     def input(self, dto: EncoderInputDTO, **kwargs) -> Dict[str, torch.Tensor]:
         self._ensure_model_loaded()
