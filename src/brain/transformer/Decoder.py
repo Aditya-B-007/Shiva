@@ -1,8 +1,12 @@
 import os
+import sys
 import logging
+
 # Silence HuggingFace progress bars and log messages to keep model selection private
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 import torch
@@ -16,8 +20,14 @@ from src.brain.transformer.thought_parser import parse_thought_text
 class Decoder(nn.Module):
     def __init__(self, model_name: str = None, device: str = None):
         super().__init__()
-        # Secretly hardcode the Gemma 4B/3-4B-Instruct model
-        resolved_model_name = "google/gemma-3-4b-it"
+        resolved_model_name = "Qwen/Qwen2.5-3B-Instruct"
+        
+        if getattr(sys, 'frozen', False):
+            project_root = os.path.dirname(sys.executable)
+        else:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        local_cache_dir = os.path.join(project_root, "models", "shiva-decoder")
+        
         if device is None:
             if torch.cuda.is_available():
                 self.device = "cuda"
@@ -28,18 +38,38 @@ class Decoder(nn.Module):
         else:
             self.device = device
             
+        os.makedirs(local_cache_dir, exist_ok=True)
+        
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(resolved_model_name, local_files_only=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                resolved_model_name,
+                cache_dir=local_cache_dir,
+                local_files_only=True
+            )
         except Exception:
-            self.tokenizer = AutoTokenizer.from_pretrained(resolved_model_name, local_files_only=False)
+            print("[Shiva Engine] Initializing cognitive tokenizer...")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                resolved_model_name,
+                cache_dir=local_cache_dir,
+                local_files_only=False
+            )
             
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             
         try:
-            self.model = AutoModelForCausalLM.from_pretrained(resolved_model_name, local_files_only=True).to(self.device)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                resolved_model_name,
+                cache_dir=local_cache_dir,
+                local_files_only=True
+            ).to(self.device)
         except Exception:
-            self.model = AutoModelForCausalLM.from_pretrained(resolved_model_name, local_files_only=False).to(self.device)
+            print("[Shiva Engine] Downloading cognitive decoder weights (this may take a few minutes)...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                resolved_model_name,
+                cache_dir=local_cache_dir,
+                local_files_only=False
+            ).to(self.device)
         self.model.eval()
         
         self.projection_layer = None

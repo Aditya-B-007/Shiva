@@ -83,7 +83,8 @@ class Mothership:
         dto = EncoderInputDTO(text=text)
         try:
             enc_in = self.encoder.input(dto)
-            enc_out = self.encoder.process(enc_in)
+            raw_out = self.encoder.process(enc_in)
+            enc_out = self.encoder.Output(raw_out)
             pooler_out = enc_out.pooler_output_pt
             if pooler_out is None:
                 pooler_out = enc_out.last_hidden_state_pt[:, 0, :]
