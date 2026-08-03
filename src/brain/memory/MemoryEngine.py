@@ -22,8 +22,7 @@ from .algorithms.SleepCycle import SleepCycle, SleepCycleResult
 from src.transferDTO import MemoryGraphDTO, MemoryEdgeDTO, MemoryNodeDTO, RetrievalDTO
 from .graph.MemoryEdge import AssociationType, MemoryEdge
 from .graph.MemoryGraph import MemoryGraph
-from .graph.MemoryNode import MemoryNode, MemoryStatus, clamp_unit
-from .repository.MemoryRepository import MemoryRepository
+from .repository.HybridMemoryRepository import HybridMemoryRepository
 
 
 class MemoryEngine(IMemoryEngine):
@@ -34,7 +33,10 @@ class MemoryEngine(IMemoryEngine):
         sleep_cycle: SleepCycle | None = None,
         repository: MemoryRepository | None = None,
     ) -> None:
-        self._graph = graph if graph is not None else MemoryGraph()
+        self._repository = repository if repository is not None else HybridMemoryRepository("./memory.db", "./chroma_db")
+        self._graph = graph if graph is not None else (
+            self._repository.load_graph() if self._repository is not None else MemoryGraph()
+        )
         self._encoder = encoder if encoder is not None else MemoryEncoder()
         self._sleep_cycle = sleep_cycle if sleep_cycle is not None else SleepCycle(
             consolidator=Consolidator(),
@@ -43,7 +45,6 @@ class MemoryEngine(IMemoryEngine):
             dream_generator=DreamGenerator(),
         )
         self._credit_assigner = CreditAssigner()
-        self._repository = repository
         self._last_stored_id: str | None = None
         self._current_episode_trajectory: list[str] = []
 
@@ -83,19 +84,35 @@ class MemoryEngine(IMemoryEngine):
         if limit <= 0:
             return RetrievalDTO(query=query)
         query_text = str(query).lower()
+
+        # 1. Vector similarity search via ChromaDB
+        vector_scores: dict[str, float] = {}
+        if hasattr(self._repository, "vector_search"):
+            try:
+                vector_scores = getattr(self._repository, "vector_search")(query_text, limit=limit * 2)
+            except Exception:
+                vector_scores = {}
+
         scored = []
         for node in self._graph.nodes:
             if node.status == MemoryStatus.PRUNED:
                 continue
             text = f"{node.summary} {node.raw_content} {node.context_signature}".lower()
+
+            # 2. Keyword lexical search score
             lexical_score = self._lexical_score(query_text, text)
+
+            # 3. Dense vector score (from ChromaDB HNSW cosine similarity)
+            vector_score = vector_scores.get(node.id, 0.0)
+
+            # 4. Hybrid Ranking Fusion Equation
             score = (
-                lexical_score * 0.45
-                + node.activation * 0.20
-                + node.strength * 0.15
-                + node.emotional_salience * 0.10
-                + node.identity_relevance * 0.05
-                + node.recency * 0.05
+                vector_score * 0.35
+                + lexical_score * 0.25
+                + node.activation * 0.15
+                + node.strength * 0.10
+                + node.recency * 0.10
+                + node.emotional_salience * 0.05
             )
             if score > 0.0:
                 scored.append((score, node))
@@ -107,6 +124,7 @@ class MemoryEngine(IMemoryEngine):
             memories=tuple(self._node_to_dto(node) for node in selected),
             confidence=confidence,
         )
+
 
 
 
