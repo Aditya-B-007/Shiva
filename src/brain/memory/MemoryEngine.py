@@ -108,6 +108,8 @@ class MemoryEngine(IMemoryEngine):
             confidence=confidence,
         )
 
+
+
     def _lexical_score(self, query_text: str, memory_text: str) -> float:
         query_terms = self._tokenize_and_stem(query_text)
         if not query_terms:
