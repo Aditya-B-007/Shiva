@@ -68,13 +68,3 @@ class HybridMemoryRepository(MemoryRepository):
             try:
                 self.chroma_repo.save_graph(graph)
             except Exception:
-                pass
-
-    def vector_search(self, query_text: str, limit: int = 5) -> Dict[str, float]:
-        """Routes semantic vector search to ChromaDB."""
-        if self.chroma_repo is not None:
-            try:
-                return self.chroma_repo.vector_search(query_text, limit=limit)
-            except Exception:
-                return {}
-        return {}

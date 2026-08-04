@@ -20,7 +20,7 @@ from src.brain.transformer.thought_parser import parse_thought_text
 class Decoder(nn.Module):
     def __init__(self, model_name: str = None, device: str = None):
         super().__init__()
-        resolved_model_name = "Qwen/Qwen2.5-3B-Instruct"
+        resolved_model_name = "HuggingFaceTB/SmolLM2-360M-Instruct"
         
         if getattr(sys, 'frozen', False):
             project_root = os.path.dirname(sys.executable)
@@ -234,7 +234,7 @@ class Decoder(nn.Module):
             "pad_token_id": self.tokenizer.pad_token_id,
             "eos_token_id": self.tokenizer.eos_token_id,
             "do_sample": True,
-            "temperature": 0.7,
+            "temperature": 0.6,
             "top_p": 0.9,
         }
         generation_kwargs.update(kwargs)
