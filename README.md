@@ -282,14 +282,6 @@ When adding or modifying code in Shiva:
 
 ---
 
-# Mission
-
-> **Shiva is a Cognitive Operating System that transforms existing developer workspaces into autonomous cognitive runtimes, continuously planning, executing, remembering, and adapting.**
-
-<img width="1051" height="881" alt="Screenshot 2026-07-11 at 11 25 46 PM" src="https://github.com/user-attachments/assets/e3c32e2a-2f01-403a-a807-db6fe3b56d0a" />
-
----
-
 ## Contributing
 Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Cognitive Science, and Software Automation. 
 
