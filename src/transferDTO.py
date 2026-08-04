@@ -148,9 +148,37 @@ class RetrievalDTO:
     confidence: float = 0.0
 
 
+from pydantic import BaseModel, ConfigDict, Field
+
 # ==============================================================================
 # SECTION 4: Cognitive Brain & Reasoning DTOs
 # ==============================================================================
+
+class ActionInputDTO(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    code: Optional[str] = Field(default=None, description="Executable Python 3 code block")
+    command: Optional[str] = Field(default=None, description="CLI command or file operation")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary action parameters")
+    raw_output: Optional[str] = Field(default=None, description="Fallback raw output buffer")
+
+
+class ThoughtStepDTO(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    reasoning: str = Field(default="", description="Step-by-step cognitive reflection and critique")
+    action: str = Field(default="scratchpad_note", description="Action type: 'scratchpad_note', 'execute_code', or 'decision'")
+    action_input: ActionInputDTO = Field(default_factory=ActionInputDTO, description="Structured action input parameters")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Self-reflected confidence score between 0.0 and 1.0")
+
+    @classmethod
+    def get_json_schema_prompt(cls) -> str:
+        """Generates formatted JSON Schema instruction from Pydantic model for prompt injection."""
+        import json
+        schema = cls.model_json_schema()
+        return f"Respond strictly using this JSON Schema:\n{json.dumps(schema, indent=2)}"
+
+
 
 @dataclass(slots=True)
 class BrainErrorDTO:
@@ -166,6 +194,7 @@ class ThoughtParseDiagnosticsDTO:
     parse_success: bool = True
     missing_fields: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+
 
 
 @dataclass(slots=True)
