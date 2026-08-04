@@ -58,6 +58,12 @@ class ScratchPad:
             self.thoughts.append(thought)
             step = ThoughtParser.parse(thought.raw_text or thought.thought_body)
             self.steps.append(step)
+            # Promote a non-empty parsed decision onto the scratchpad so that
+            # nodeProcessingEngine.process() can surface it as the result decision.
+            if thought.parsed_decision:
+                self.decision = thought.parsed_decision
+                if thought.confidence:
+                    self.confidence = thought.confidence
         else:
             step = ThoughtParser.parse(str(thought))
             self.steps.append(step)
