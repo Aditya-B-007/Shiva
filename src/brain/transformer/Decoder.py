@@ -1,8 +1,6 @@
 import os
 import sys
 import logging
-
-# Silence HuggingFace progress bars and log messages to keep model selection private
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 logging.getLogger("transformers").setLevel(logging.ERROR)
@@ -205,17 +203,21 @@ class Decoder(nn.Module):
         user_parts.append("Generate the next thought, critique, and confidence:")
         user_content = "\n".join(user_parts)
         
-        # System instructions
+        # System instructions with JSON Schema guidance for SLMs
         system_content = (
             "You are the cognitive reasoning engine of a Shiva node. "
-            "You must engage in active self-reflection. For each thought step, you must think and output EXACTLY in this format:\n"
+            "You must engage in active self-reflection. You may output your thought step as a JSON object matching this schema:\n"
+            "{\n"
+            '  "reasoning": "<your step-by-step reflection and critique>",\n'
+            '  "action": "scratchpad_note | execute_code | decision",\n'
+            '  "action_input": {"code": "<optional python block>", "raw_output": "<optional decision>"},\n'
+            '  "confidence": 0.85\n'
+            "}\n\n"
+            "Alternatively, format as:\n"
             "THOUGHT: <your reasoning/thought>\n"
-            "CRITIQUE: <your critique of why this might be wrong or what you missed>\n"
-            "CONFIDENCE: <your self-reflected confidence between 0.0 and 1.0>\n\n"
-            "If you are ready to make a final decision, append 'DECISION: <your decision>' at the end.\n"
-            "If the task requires writing code, creating/editing files, or execution logic, "
-            "you MUST output a Python 3.9 code block in your decision (using ```python ... ```). "
-            "The sandbox script can read/write files under WORKSPACE_DIR."
+            "CRITIQUE: <your critique>\n"
+            "CONFIDENCE: <0.0 to 1.0>\n"
+            "DECISION: <your decision or ```python script ```>"
         )
         
         # Format using the model's native chat template
@@ -223,6 +225,7 @@ class Decoder(nn.Module):
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content}
         ]
+
         
         latent_action = kwargs.pop("latent_action", None)
 
