@@ -10,6 +10,9 @@
 ![Status](https://img.shields.io/badge/status-active%20development-orange.svg)
 ![Architecture](https://img.shields.io/badge/architecture-Cognitive%20Swarm-purple.svg)
 
+<img width="2000" height="2000" alt="image" src="https://github.com/user-attachments/assets/54790a8a-0bf2-4759-abe8-f51347c7f22e" />
+
+
 </div>
 
 ---
