@@ -9,7 +9,6 @@ try:
         IHomeostasis,
         IMemoryEngine,
     )
-    from emotionalContract import EmotionDTO, HomeostasisDTO
 except ImportError:
     try:
         from .emotionInterface import (
@@ -18,7 +17,6 @@ except ImportError:
             IHomeostasis,
             IMemoryEngine,
         )
-        from .emotionalContract import EmotionDTO, HomeostasisDTO
     except ImportError:
         from src.brain.emotionalHandlerAndStore.emotionInterface import (
             IAppraisal,
@@ -26,10 +24,8 @@ except ImportError:
             IHomeostasis,
             IMemoryEngine,
         )
-        from src.brain.emotionalHandlerAndStore.emotionalContract import (
-            EmotionDTO,
-            HomeostasisDTO,
-        )
+
+from src.transferDTO import EmotionDTO, HomeostasisDTO
 
 
 class EmotionalOrchestrator:
@@ -57,7 +53,7 @@ class EmotionalOrchestrator:
 
     def perceive_event(self, event: Any) -> EmotionDTO:
         # Wrap string/non-FeatureBundle perceptions into a FeatureBundle to satisfy AppraisalEngine requirements
-        from src.brain.emotionalHandlerAndStore.emotionalContract import FeatureBundle, Event, EventType, PerceptionDTO
+        from src.transferDTO import FeatureBundle, Event, EventType, PerceptionDTO
         if not isinstance(event, FeatureBundle):
             evt = Event(event_type=EventType.PERCEPTION, payload=str(event), source="perception")
             perc = PerceptionDTO(text=str(event))

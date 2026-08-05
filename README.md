@@ -1,315 +1,119 @@
 <div align="center">
 
 # shiva.ai
-### An Open-Source Cognitive Architecture for Autonomous AI Systems
+### Autonomous On-Device Cognitive Operating System for Enterprise Workspaces
 
-*"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, and acts."*
+*"Empowering organizations with private, sovereign, zero-cost artificial general intelligence that perceives, remembers, regulates, and executes directly within developer environments."*
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-green.svg)
 ![Status](https://img.shields.io/badge/status-active%20development-orange.svg)
-![Research](https://img.shields.io/badge/research-cognitive%20AI-purple.svg)
+![Architecture](https://img.shields.io/badge/architecture-Cognitive%20Swarm-purple.svg)
+
+<img width="2000" height="2000" alt="image" src="https://github.com/user-attachments/assets/54790a8a-0bf2-4759-abe8-f51347c7f22e" />
+
 
 </div>
----
-
-![shiva ai](https://github.com/user-attachments/assets/24f134a5-aae8-4044-879a-ae0c431e08b4)
-# Why Shiva?
-
-Artificial Intelligence has made remarkable progress in language understanding, reasoning, vision, and code generation. Modern Large Language Models (LLMs) can solve complex problems, write software, and interact with humans in increasingly natural ways. Despite these advances, nearly all current AI systems remain fundamentally **reactive**.
-
-They generate responses conditioned on inputs but do not continuously perceive their environment, regulate internal cognitive processes, maintain persistent identity, or autonomously decide what deserves attention. Memory is typically implemented as retrieval over stored embeddings, planning is often prompt-driven, and reasoning begins only after a user request.
-
-Shiva explores a fundamentally different direction.
-
-Rather than building another language model, Shiva aims to build a **Cognitive Operating System (Cognitive OS)** capable of continuously perceiving, reasoning, remembering, planning, and acting across multiple domains.
 
 ---
 
-# The Problem
+# Executive Summary & Enterprise Value Proposition
 
-Most AI systems today can be simplified as:
+**Shiva.ai** is a distributed, on-device Cognitive Operating System engineered for deep workspace automation, sovereign knowledge retention, and multi-agent problem solving. 
 
-```text
-Input
-   │
-   ▼
-Large Language Model
-   │
-   ▼
-Output
+Unlike traditional cloud-hosted artificial intelligence models that act as simple prompt-response web services, Shiva operates as an integrated cognitive runtime running locally inside enterprise developer environments. It combines multi-tier neural models, continuous reinforcement learning, hybrid vector-graph long-term memory, homeostatic stability regulation, and local sandbox code execution to deliver end-to-end task completion.
+
+---
+
+# Enterprise Business Use Cases
+
+### 1. Sovereign & Air-Gapped Code Generation
+Enterprise software teams working on proprietary codebases, trade secrets, financial algorithms, or regulated healthcare systems cannot risk transmitting source code over external networks. Shiva runs 100% locally on workstation hardware, performing automated code refactoring, bug fixes, test generation, and architecture audits with zero data leakage.
+
+### 2. Enterprise Persistent Memory & Institutional Knowledge Retention
+Standard language models suffer from catastrophic forgetting once a chat session terminates. Shiva continuously indexes developer actions, project commits, architectural choices, and execution outcomes into a hybrid vector-graph memory store. Institutional knowledge is permanently retained, reinforced, and retrieved across teams without external database costs.
+
+### 3. Autonomous 24/7 Sleep Consolidation & Synthetic Dreaming
+During developer downtime, Shiva enters an automated background sleep cycle. It prunes dormant memory nodes, consolidates short-term scratchpad trajectories into long-term knowledge, and runs synthetic dream simulations to optimize future search efficiency—ensuring workstations wake up smarter every morning.
+
+### 4. Regulated Multi-Agent Swarm Engineering
+Complex software challenges require multiple specialized perspectives. Shiva orchestrates a swarm of dedicated Cortical Columns (Analytical, Creative, Risk & Safety, and Verification) under an executive prefrontal controller. Dynamic physical stability regulation prevents cognitive loops, hallucinations, and runaway operations.
+
+---
+
+# Strategic Advantages over Proprietary Closed Cloud AI Models
+
+Shiva was built to address the critical architectural, financial, and security limitations inherent in proprietary closed cloud LLM APIs and legacy metered assistant services.
+
+| Feature / Capability | Proprietary Closed Cloud AI APIs | **Shiva.ai (On-Device Cognitive OS)** |
+| :--- | :--- | :--- |
+| **Data Privacy & Sovereignty** | **High Risk**: Source code, intellectual property, and internal context are transmitted to remote third-party servers. | **100% Sovereign**: Runs fully on-device. Zero network requests, zero third-party logging, air-gap compliant. |
+| **Operational & Token Costs** | **Unbounded Cost**: Metered per-token pricing scales exponentially as context grows across large codebases. | **$0 Ongoing API Cost**: Utilizes local hardware compute with zero per-token or subscription fees. |
+| **Memory Lifetime & Context** | **Stateless**: Context is lost when prompt windows fill up or chat sessions are closed. | **Infinite Hybrid RAG Memory**: Dual ChromaDB vector store & SQLite relational graph topology persists indefinitely across sessions. |
+| **System Reliability & Crash Safety** | **Fragile**: Malformed model outputs or API timeouts disrupt automated developer pipelines. | **Zero-Crash Resilient Pipeline**: 5-tier fallback cascade (`ThoughtParser`) guarantees structured execution under all conditions. |
+| **Self-Regulation & Hallucinations** | **Unregulated**: Cloud models lack physical self-awareness, frequently generating unverified hallucinated code. | **Physical Pendulum Regulation**: Prefrontal Mothership uses inverted pendulum dynamics to measure uncertainty and trigger risk columns. |
+| **Reinforcement & Self-Improvement** | **Static**: Closed weights remain static; model cannot learn from daily workspace actions. | **Continuous RL (Swarm SAC)**: Soft Actor-Critic policy continuously reinforces successful actions via temporal difference learning. |
+| **Execution Environment** | **Constrained**: Relies on remote cloud proxies or manual user copy-pasting of code snippets. | **Local Execution Sandbox**: Direct, sandboxed Python runtime execution with automated unit test verification. |
+
+---
+
+## Comparative Value Matrix
+
+### 1. Eliminating Intellectual Property Exposure
+Proprietary cloud platforms require sending confidential codebases to centralized servers, exposing organizations to compliance breaches, data leaks, and unauthorized training usage. Shiva provides complete operational privacy by keeping all weights, vector embeddings, relational graphs, and code sandboxes strictly on local corporate hardware.
+
+### 2. Zero-Cost Scaling for Heavy Developers
+As developer prompts and project contexts expand, metered API billing for proprietary closed models creates unpredictable overhead. Shiva leverages local accelerator hardware (CUDA / Apple Silicon MPS / CPU), delivering unlimited reasoning iterations, multi-agent swarm arbitration, and continuous background sleep cycles at zero incremental cost.
+
+### 3. Deterministic Governance vs. Unpredictable LLM Outputs
+Proprietary web endpoints regularly break structured downstream parsing due to unexpected format shifts or unclosed tags. Shiva enforces a zero-crash architecture: every model output passes through a 5-stage parsing pipeline that automatically extracts structured JSON, cleans syntax errors, and falls back to safe operational defaults if necessary.
+
+---
+
+# Architecture Overview & Developer Navigation
+
+For a detailed, file-by-file and line-by-line technical breakdown of the entire Shiva repository for AI agents and human developers, refer to the dedicated agent knowledge base:
+
+- 📑 [Architecture Overview](file:///Users/veenadhruva/Desktop/Aditya_projects/Working/Shiva/md_file_for_agent/00_ARCHITECTURE_OVERVIEW.md)
+- 📑 [Data Transfer Objects (`src/transferDTO.py`)](file:///Users/veenadhruva/Desktop/Aditya_projects/Working/Shiva/md_file_for_agent/01_TRANSFER_DTO.md)
+- 📑 [Input, Perception & Output Subsystems](file:///Users/veenadhruva/Desktop/Aditya_projects/Working/Shiva/md_file_for_agent/02_INPUT_OUTPUT_PACKAGING.md)
+- 📑 [Cognitive Transformer & Single-Node Reasoning](file:///Users/veenadhruva/Desktop/Aditya_projects/Working/Shiva/md_file_for_agent/03_BRAIN_TRANSFORMER_NODE.md)
+- 📑 [Multi-Tier Memory Architecture](file:///Users/veenadhruva/Desktop/Aditya_projects/Working/Shiva/md_file_for_agent/04_BRAIN_MEMORY.md)
+- 📑 [Regulation, Transactional Gates & Infrastructure](file:///Users/veenadhruva/Desktop/Aditya_projects/Working/Shiva/md_file_for_agent/05_BRAIN_EMOTION_GATE_INFRASTRUCTURE.md)
+- 📑 [Distributed Swarm Intelligence & RL Policy](file:///Users/veenadhruva/Desktop/Aditya_projects/Working/Shiva/md_file_for_agent/06_SWARM_SUBSYSTEM.md)
+
+---
+
+# Quick Start & Installation
+
+### Requirements
+- Python 3.11+
+- PyTorch with CUDA or Apple Silicon MPS support (optional, CPU supported)
+
+### Installation
+```bash
+# Clone the repository
+git clone https://github.com/shiva-ai/shiva.git
+cd shiva
+
+# Install dependencies
+pip install -r src/packaging/requirements.txt
 ```
 
-While powerful, this architecture assumes intelligence begins with a prompt and ends with a response.
+### Running Shiva CLI
+```bash
+# Submit a single problem query
+python -m src.input.cli -q "Analyze the current workspace and refactor bug in module" -d ./
 
-Real-world autonomous systems do not function this way.
+# Interactive terminal session
+python -m src.input.cli -i -d ./
 
-A robot, smartphone assistant, autonomous vehicle, or embodied AI must continuously:
-
-- Perceive the environment.
-- Maintain an internal cognitive state.
-- Remember previous experiences.
-- Regulate competing objectives.
-- Collaborate across multiple cognitive processes.
-- Decide when and how to act without explicit instructions.
-
-The challenge is no longer building a model that answers questions.
-
-The challenge is building software that can **continuously think**.
-
----
-
-# Our Approach
-
-Shiva models intelligence as a **distributed Cognitive Operating System** rather than a monolithic neural network.
-
-Instead of placing a Large Language Model at the center of the architecture, Shiva decomposes cognition into specialized systems responsible for distinct aspects of intelligence.
-
-These systems include:
-
-- Multi-modal Perception
-- Semantic Understanding
-- Emotion
-- Homeostasis
-- Memory
-- Working Memory
-- Identity
-- Planning
-- Decision Making
-- Tool Execution
-
-Each subsystem evolves independently while cooperating through a shared cognitive runtime.
-
-The language model is **not the brain**.
-
-It is a **reasoning engine** used by the cognitive system whenever probabilistic inference or language generation is required.
-
----
-
-# Cognitive Architecture
-
-```text
-                    Environment
-                          │
-                          ▼
-                 Multi-Modal Perception
-          (Text • Vision • Audio • Sensors)
-                          │
-                          ▼
-               Semantic Understanding
-                      (BERT)
-                          │
-                          ▼
-              Orchestration & Event System
-                          │
-          ┌───────────────┴───────────────┐
-          ▼                               ▼
-      Cognitive Swarm             Environment Interface
-   (Multiple Cognitive Nodes)
-          │
-          ▼
-  Emotion • Memory • Scratchpad
-  Identity • Planning • Goals
-          │
-          ▼
- Shared Working Memory & Coordination
-          │
-          ▼
-      Reasoning Engine
- (SmolLM2 / Frankenmerged Models)
-          │
-          ▼
- Tool Selection & Action Execution
-          │
-          ▼
- Updated Internal Cognitive State
+# Enable Voice Output synthesis (WAV output)
+python -m src.input.cli -q "Summarize repository architecture" -v
 ```
 
 ---
 
-# Design Philosophy
+# License
 
-Shiva is built on the belief that intelligence emerges from the interaction of specialized systems rather than from a single algorithm.
-
-Our design principles are:
-
-- Intelligence is a continuous process, not a prompt-response cycle.
-- Cognition should be modular and independently evolvable.
-- Memory must influence future behaviour.
-- Emotion is an adaptive computational signal rather than a human simulation.
-- Working memory and long-term memory are fundamentally different.
-- Internal regulation is necessary for stable autonomous behaviour.
-- Large Language Models are reasoning engines—not complete cognitive architectures.
-
----
-
-# Core Concepts
-
-### Cognitive Operating System
-
-Shiva is designed as an operating system for cognition rather than a conversational assistant. It continuously processes events, manages internal state, schedules cognitive processes, and coordinates perception, reasoning, memory, and action.
-
----
-
-### Cognitive Swarm
-
-Instead of relying on a single monolithic controller, Shiva distributes cognition across multiple autonomous cognitive nodes.
-
-Each node maintains its own local:
-
-- Emotional State
-- Memory Access
-- Scratchpad
-- Planning Process
-- Cognitive Executive
-
-Collective intelligence emerges through cooperation between these nodes.
-
----
-
-### Emotion & Homeostasis
-
-Emotion is treated as a computational mechanism that regulates:
-
-- Attention
-- Learning Priority
-- Memory Formation
-- Decision Bias
-- Resource Allocation
-
-Homeostasis continuously monitors internal variables such as energy, safety, stress, and cognitive load to maintain stable behaviour.
-
----
-
-### Persistent Memory
-
-Shiva separates memory into multiple layers:
-
-- Working Memory
-- Episodic Memory
-- Semantic Memory
-- Narrative Identity
-
-Rather than storing every interaction, memories are consolidated based on emotional salience, novelty, and long-term utility.
-
----
-
-### Shared Reasoning Engine
-
-The reasoning engine performs probabilistic inference and language generation using open-weight language models.
-
-Current implementation targets:
-
-- SmolLM2
-
-Future versions aim to support:
-
-- Dynamic Model Migration
-- Online Frankenmerging
-- Specialized Reasoning Models
-
----
-
-### Embodied Intelligence
-
-Shiva is designed to operate directly on physical devices.
-
-When installed on a smartphone, tablet, robot, or embedded platform, existing hardware becomes part of the cognitive system.
-
-For example:
-
-- Camera → Vision
-- Microphone → Hearing
-- GPS → Spatial Awareness
-- Accelerometer → Balance
-- Storage → Long-Term Memory
-- Applications → Effectors
-
-Rather than controlling a device through isolated API calls, Shiva treats the device itself as the body of an autonomous cognitive agent.
-
----
-
-# Technology Stack
-
-### Perception
-
-- BERT
-- Vision Encoders
-- Audio Encoders
-
-### Cognition
-
-- Emotional Appraisal
-- Homeostasis
-- Memory Graphs
-- Scratchpad Reasoning
-- Swarm Cognition
-
-### Reasoning
-
-- SmolLM2
-- Frankenmerged Language Models
-
-### Reinforcement Learning
-
-- Soft Actor-Critic (SAC)
-- Prioritized Experience Replay
-- Multi-Agent Reinforcement Learning
-
-### Infrastructure
-
-- PyTorch
-- SQLite
-- Plugin-Based Cognitive Runtime
-- Distributed Swarm Architecture
-
----
-
-# Roadmap
-
-### Phase 1 — Foundations *(Complete)*
-
-- Emotion Engine
-- Homeostasis
-- Memory System
-
-### Phase 2 — Cognitive Runtime *(In Progress)*
-
-- Cognitive Swarm
-- Shared Reasoning Engine
-- Scratchpad Coordination
-- Tool Execution Framework
-
-### Phase 3 — Embodied Intelligence
-
-- Smartphone Runtime
-- Robotics Integration
-- Continuous Background Cognition
-- Multi-modal Perception
-
-### Phase 4 — Distributed Intelligence
-
-- Multi-device Cognition
-- Online Frankenmerging
-- Model Migration
-- Distributed Memory Synchronization
-
----
-
-# Mission
-
-> **Shiva is not another AI assistant built around a language model. It is a Cognitive Operating System that transforms existing hardware into autonomous cognitive agents capable of continuously perceiving, reasoning, remembering, planning, and acting.**
-
-<img width="1051" height="881" alt="Screenshot 2026-07-11 at 11 25 46 PM" src="https://github.com/user-attachments/assets/e3c32e2a-2f01-403a-a807-db6fe3b56d0a" />
-
-
----
-
-## Contributing
-Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Cognitive Science, and Robotics. 
-
-## License
-Released under the Apache 2.0 License.
-
----
-**Intelligence is more than prediction. It is perception, regulation, memory, adaptation, and action.**
+Distributed under the Apache 2.0 License. See `LICENSE` for details.

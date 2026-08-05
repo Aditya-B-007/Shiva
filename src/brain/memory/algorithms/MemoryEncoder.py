@@ -43,10 +43,6 @@ class MemoryEncoder:
         return text if len(text) <= 160 else f"{text[:157]}..."
 
     def _modality(self, perception: Any, raw_content: Any) -> MemoryModality:
-        if hasattr(perception, "image") and getattr(perception, "image") is not None:
-            return MemoryModality.IMAGE
-        if hasattr(perception, "audio") and getattr(perception, "audio") is not None:
-            return MemoryModality.AUDIO
         if hasattr(perception, "sensor_data") and getattr(perception, "sensor_data"):
             return MemoryModality.SENSOR
         if isinstance(raw_content, Mapping) and raw_content.get("action"):

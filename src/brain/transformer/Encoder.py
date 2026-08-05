@@ -1,10 +1,13 @@
+import os
+import sys
 import torch
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from transformers import AutoTokenizer, AutoModel
-from src.brain.transformer.transformerArchitectureDTOs import EncoderInputDTO, EncoderOutputDTO
+from src.transferDTO import EncoderInputDTO, EncoderOutputDTO
 
 class Encoder:
-    def __init__(self, model_name: str = "bert-base-uncased", device: str = None):
+    def __init__(self, model_name: str = "google-bert/bert-large-uncased", device: Optional[str] = None):
+        self.model_name = model_name
         if device is None:
             if torch.cuda.is_available():
                 self.device = "cuda"
@@ -14,12 +17,39 @@ class Encoder:
                 self.device = "cpu"
         else:
             self.device = device
-            
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name).to(self.device)
-        self.model.eval()
+
+        self.tokenizer = None
+        self.model = None
+        self._model_load_error: Optional[Exception] = None
+
+    def _ensure_model_loaded(self) -> None:
+        if self.model is not None and self.tokenizer is not None:
+            return
+        if self._model_load_error is not None:
+            raise RuntimeError(f"Encoder model is unavailable: {self._model_load_error}") from self._model_load_error
+
+        if getattr(sys, 'frozen', False):
+            project_root = os.path.dirname(sys.executable)
+        else:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        local_cache_dir = os.path.join(project_root, "models", "shiva-encoder")
+        os.makedirs(local_cache_dir, exist_ok=True)
+
+        try:
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=True)
+                self.model = AutoModel.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=True).to(self.device)
+            except Exception:
+                print("[Shiva Engine] Downloading cognitive encoder weights...")
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=False)
+                self.model = AutoModel.from_pretrained(self.model_name, cache_dir=local_cache_dir, local_files_only=False).to(self.device)
+            self.model.eval()
+        except Exception as exc:
+            self._model_load_error = exc
+            raise RuntimeError("Encoder model is unavailable") from exc
 
     def input(self, dto: EncoderInputDTO, **kwargs) -> Dict[str, torch.Tensor]:
+        self._ensure_model_loaded()
         return self.tokenizer(
             dto.text,
             padding=True,
@@ -30,6 +60,7 @@ class Encoder:
         ).to(self.device)
 
     def process(self, tokenized_input: torch.Tensor | Dict[str, torch.Tensor]) -> Any:
+        self._ensure_model_loaded()
         with torch.no_grad():
             if isinstance(tokenized_input, torch.Tensor):
                 outputs = self.model(inputs_embeds=tokenized_input)

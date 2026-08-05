@@ -12,19 +12,18 @@ except ImportError:
         from src.brain.emotionalHandlerAndStore.emotionInterface import IMemoryEngine
 
 
+from .algorithms.CreditAssigner import CreditAssigner
 from .algorithms.Consolidator import Consolidator
 from .algorithms.DreamGenerator import DreamGenerator
 from .algorithms.ForgettingModel import ForgettingModel
 from .algorithms.IdentityUpdater import IdentityUpdater
 from .algorithms.MemoryEncoder import MemoryEncoder
 from .algorithms.SleepCycle import SleepCycle, SleepCycleResult
-from .dto.MemoryGraphDTO import MemoryGraphDTO
-from .dto.MemoryNodeDTO import MemoryEdgeDTO, MemoryNodeDTO
-from .dto.RetrievalDTO import RetrievalDTO
+from src.transferDTO import MemoryGraphDTO, MemoryEdgeDTO, MemoryNodeDTO, RetrievalDTO
 from .graph.MemoryEdge import AssociationType, MemoryEdge
+from .graph.MemoryNode import MemoryStatus, clamp_unit
 from .graph.MemoryGraph import MemoryGraph
-from .graph.MemoryNode import MemoryNode, MemoryStatus, clamp_unit
-from .repository.MemoryRepository import MemoryRepository
+from .repository.HybridMemoryRepository import HybridMemoryRepository
 
 
 class MemoryEngine(IMemoryEngine):
@@ -35,7 +34,10 @@ class MemoryEngine(IMemoryEngine):
         sleep_cycle: SleepCycle | None = None,
         repository: MemoryRepository | None = None,
     ) -> None:
-        self._graph = graph if graph is not None else MemoryGraph()
+        self._repository = repository if repository is not None else HybridMemoryRepository("./memory.db", "./chroma_db")
+        self._graph = graph if graph is not None else (
+            self._repository.load_graph() if self._repository is not None else MemoryGraph()
+        )
         self._encoder = encoder if encoder is not None else MemoryEncoder()
         self._sleep_cycle = sleep_cycle if sleep_cycle is not None else SleepCycle(
             consolidator=Consolidator(),
@@ -43,8 +45,9 @@ class MemoryEngine(IMemoryEngine):
             identity_updater=IdentityUpdater(),
             dream_generator=DreamGenerator(),
         )
-        self._repository = repository
+        self._credit_assigner = CreditAssigner()
         self._last_stored_id: str | None = None
+        self._current_episode_trajectory: list[str] = []
 
     def store(
         self,
@@ -55,6 +58,7 @@ class MemoryEngine(IMemoryEngine):
     ) -> MemoryNodeDTO:
         node = self._encoder.encode(perception, emotion, homeostasis, context)
         self._graph.add_node(node)
+        self._current_episode_trajectory.append(node.id)
         if self._last_stored_id is not None:
             self._graph.connect(
                 self._last_stored_id,
@@ -69,23 +73,47 @@ class MemoryEngine(IMemoryEngine):
             self._save_edges_for(node.id)
         return self._node_to_dto(node)
 
+    def clear_trajectory(self) -> None:
+        self._current_episode_trajectory.clear()
+
+    def assign_credit_for_episode(self, reward: float) -> None:
+        self._credit_assigner.assign_credit(self._graph, self._current_episode_trajectory, reward)
+        self.save()
+        self.clear_trajectory()
+
     def retrieve(self, query: Any, limit: int = 5) -> RetrievalDTO:
         if limit <= 0:
             return RetrievalDTO(query=query)
         query_text = str(query).lower()
+
+        # 1. Vector similarity search via ChromaDB
+        vector_scores: dict[str, float] = {}
+        if hasattr(self._repository, "vector_search"):
+            try:
+                vector_scores = getattr(self._repository, "vector_search")(query_text, limit=limit * 2)
+            except Exception:
+                vector_scores = {}
+
         scored = []
         for node in self._graph.nodes:
             if node.status == MemoryStatus.PRUNED:
                 continue
             text = f"{node.summary} {node.raw_content} {node.context_signature}".lower()
+
+            # 2. Keyword lexical search score
             lexical_score = self._lexical_score(query_text, text)
+
+            # 3. Dense vector score (from ChromaDB HNSW cosine similarity)
+            vector_score = vector_scores.get(node.id, 0.0)
+
+            # 4. Hybrid Ranking Fusion Equation
             score = (
-                lexical_score * 0.45
-                + node.activation * 0.20
-                + node.strength * 0.15
-                + node.emotional_salience * 0.10
-                + node.identity_relevance * 0.05
-                + node.recency * 0.05
+                vector_score * 0.35
+                + lexical_score * 0.25
+                + node.activation * 0.15
+                + node.strength * 0.10
+                + node.recency * 0.10
+                + node.emotional_salience * 0.05
             )
             if score > 0.0:
                 scored.append((score, node))
@@ -97,6 +125,9 @@ class MemoryEngine(IMemoryEngine):
             memories=tuple(self._node_to_dto(node) for node in selected),
             confidence=confidence,
         )
+
+
+
 
     def _lexical_score(self, query_text: str, memory_text: str) -> float:
         query_terms = self._tokenize_and_stem(query_text)
@@ -145,6 +176,10 @@ class MemoryEngine(IMemoryEngine):
     def save(self) -> None:
         if self._repository is not None:
             self._repository.save_graph(self._graph)
+
+    def assign_credit(self, trajectory: list[str], final_reward: float) -> None:
+        self._credit_assigner.assign_credit(self._graph, trajectory, final_reward)
+        self.save()
 
     def graph_snapshot(self) -> MemoryGraphDTO:
         return MemoryGraphDTO(

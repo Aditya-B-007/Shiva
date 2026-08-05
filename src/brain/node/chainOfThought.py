@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 from abc import ABC, abstractmethod
-from src.brain.node.nodeDTOs import ThoughtDTO
+from src.transferDTO import ThoughtDTO
 
 class IGoalEvaluator(ABC):
     @abstractmethod

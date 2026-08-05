@@ -9,14 +9,13 @@ from typing import Mapping, Protocol, Sequence
 
 try:
     from emotionInterface import IHomeostasis
-    from emotionalContract import HomeostasisDTO
 except ImportError:
     try:
         from .emotionInterface import IHomeostasis
-        from .emotionalContract import HomeostasisDTO
     except ImportError:
         from src.brain.emotionalHandlerAndStore.emotionInterface import IHomeostasis
-        from src.brain.emotionalHandlerAndStore.emotionalContract import HomeostasisDTO
+
+from src.transferDTO import HomeostasisDTO
 
 
 
