@@ -68,3 +68,4 @@ class HybridMemoryRepository(MemoryRepository):
             try:
                 self.chroma_repo.save_graph(graph)
             except Exception:
+                pass  # best-effort dual-write to ChromaDB; SQLite stays source of truth

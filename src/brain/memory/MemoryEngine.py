@@ -21,6 +21,7 @@ from .algorithms.MemoryEncoder import MemoryEncoder
 from .algorithms.SleepCycle import SleepCycle, SleepCycleResult
 from src.transferDTO import MemoryGraphDTO, MemoryEdgeDTO, MemoryNodeDTO, RetrievalDTO
 from .graph.MemoryEdge import AssociationType, MemoryEdge
+from .graph.MemoryNode import MemoryStatus, clamp_unit
 from .graph.MemoryGraph import MemoryGraph
 from .repository.HybridMemoryRepository import HybridMemoryRepository
 
