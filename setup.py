@@ -12,6 +12,8 @@ setup(
         "psutil",
         "websockets",
         "soundfile",
+        "chromadb",
+        "pydantic",
     ],
     entry_points={
         "console_scripts": [
