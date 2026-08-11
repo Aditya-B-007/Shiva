@@ -1,11 +1,12 @@
 <div align="center">
 
 # shiva.ai
-### An Open-Source Cognitive Architecture for Autonomous AI Systems
+### An Open-Source Cognitive Operating System & Sub-Millisecond Autonomous Runtime
 
-*"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, and acts."*
+*"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, projects safety, and acts in sub-millisecond real time."*
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
+![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-green.svg)
 ![Status](https://img.shields.io/badge/status-active%20development-orange.svg)
 ![Research](https://img.shields.io/badge/research-cognitive%20AI-purple.svg)
@@ -14,79 +15,92 @@
 ---
 
 ![shiva ai](https://github.com/user-attachments/assets/24f134a5-aae8-4044-879a-ae0c431e08b4)
+
 # Why Shiva?
 
-Artificial Intelligence has made remarkable progress in language understanding, reasoning, vision, and code generation. Modern Large Language Models (LLMs) can solve complex problems, write software, and interact with humans in increasingly natural ways. Despite these advances, nearly all current AI systems remain fundamentally **reactive**.
+Artificial Intelligence has made remarkable progress in language understanding, reasoning, vision, and code generation. Modern Large Language Models (LLMs) can solve complex problems, write software, and interact with humans in natural ways. Despite these advances, nearly all current AI systems remain fundamentally **reactive**.
 
-They generate responses conditioned on inputs but do not continuously perceive their environment, regulate internal cognitive processes, maintain persistent identity, or autonomously decide what deserves attention. Memory is typically implemented as retrieval over stored embeddings, planning is often prompt-driven, and reasoning begins only after a user request.
+They generate responses conditioned on inputs but do not continuously perceive their environment, regulate internal cognitive processes, enforce physical safety constraints, maintain persistent identity, or autonomously decide when and how to act.
 
-Shiva explores a fundamentally different direction.
-
-Rather than building another language model, Shiva aims to build a **Cognitive Operating System (Cognitive OS)** capable of continuously perceiving, reasoning, remembering, planning, and acting across multiple domains.
+Shiva explores a fundamentally different direction: a **Cognitive Operating System (Cognitive OS)** paired with **Shiva 2.0**—a zero-LLM, sub-millisecond autonomous real-time continuous control runtime written in Rust.
 
 ---
 
-# The Problem
+# The 3-Layer Decoupled Architecture (Shiva 2.0)
 
-Most AI systems today can be simplified as:
+Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) across three decoupled software layers, ensuring zero dynamic heap allocations on real-time execution hot paths (`#[repr(C, align(64))]`).
 
 ```text
-Input
-   │
-   ▼
-Large Language Model
-   │
-   ▼
-Output
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      src/nodes/ — Domain Layer                          │
+│   • FailureEngineNode   • FastDecisionNode   • LongVisionNode           │
+│   • ExplorerNode        • GuardRailNode      • MothershipOrchestrator   │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ (Depends ONLY on Brain Traits)
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│               src/brain/ — Decoupling Middleware & DTOs                 │
+│   • Core Traits: AnomalyDetector, PolicyEvaluator, RiskEvaluator, etc.  │
+│   • SIMD Aligned DTOs: PolicyProposal, ConstraintResult, etc.           │
+│   • Facade Adapters: SacPolicyAdapter, CpoConstraintAdapter, etc.       │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │ (Wraps RL Math Algorithms)
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                 src/algorithms/ — Mathematical RL Layer                 │
+│   • Soft Actor-Critic (SAC)       • Constrained Policy Opt (CPO)       │
+│   • Implicit Quantile Nets (IQN)  • TD3 + Latent Skill Embedding (z)    │
+│   • Random Network Distillation (RND Curiosity)                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-While powerful, this architecture assumes intelligence begins with a prompt and ends with a response.
+---
 
-Real-world autonomous systems do not function this way.
+# The 5-Node Mothership Ensemble & 3-Phase Consensus Pipeline
 
-A robot, smartphone assistant, autonomous vehicle, or embodied AI must continuously:
+At the core of Shiva 2.0's real-time control loop is the **5-Node Mothership Ensemble**, coordinated by the **3-Phase Consensus Pipeline** inside `MothershipOrchestrator`:
 
-- Perceive the environment.
-- Maintain an internal cognitive state.
-- Remember previous experiences.
-- Regulate competing objectives.
-- Collaborate across multiple cognitive processes.
-- Decide when and how to act without explicit instructions.
-
-The challenge is no longer building a model that answers questions.
-
-The challenge is building software that can **continuously think**.
+```text
+                      Shared Memory EnvironmentStack
+                         [repr(C, align(64))]
+                                  │
+                                  ▼
+ ┌─────────────────────────────────────────────────────────────────┐
+ │ PHASE 1: Anomaly Evaluation (Failure Engine / RND)              │
+ │ • Evaluates feature error E(S_t) = (1/k) ||f̂_θ(S_t) - f*(S_t)||^2│
+ │ • IF E(S_t) > OOD_Threshold → Short-circuit to emergency action  │
+ └────────────────────────────────┬────────────────────────────────┘
+                                  │ (Nominal State)
+                                  ▼
+ ┌─────────────────────────────────────────────────────────────────┐
+ │ PHASE 2: Unconstrained Candidate Consensus                      │
+ │ 1. Fast Decision Engine (SAC): Baseline motor proposal a_fast   │
+ │ 2. Long Vision Engine (IQN): Multi-step CVaR_α risk weight w_risk│
+ │ 3. Explorer Engine (TD3 + z): Drift-compensated action a_explore│
+ │                                                                 │
+ │ Mathematical Reduction Formula (Prevents Magnitude Collapse):  │
+ │              w_fast · a_fast + w_risk · a_fast + w_adapt · a_explore │
+ │ a_candidate = ───────────────┬───────────────────────────────── │
+ │                 w_fast + w_risk + w_adapt + ε                   │
+ └────────────────────────────────┬────────────────────────────────┘
+                                  │
+                                  ▼
+ ┌─────────────────────────────────────────────────────────────────┐
+ │ PHASE 3: Safety Projection Filter (GuardRail Engine / CPO)      │
+ │ • Slew-Rate Limiting: |a_t - a_{t-1}| ≤ Δ_max                   │
+ │ • Rule-Mask Filtering: Hardware safety interlocks m_t           │
+ │ • Convex Boundary Projection onto Safe Legal Set                │
+ └────────────────────────────────┬────────────────────────────────┘
+                                  │
+                                  ▼
+                     Final Action (Hardware Dispatch)
+```
 
 ---
 
-# Our Approach
+# Cognitive Operating System (Python / High-Level Cognition)
 
-Shiva models intelligence as a **distributed Cognitive Operating System** rather than a monolithic neural network.
-
-Instead of placing a Large Language Model at the center of the architecture, Shiva decomposes cognition into specialized systems responsible for distinct aspects of intelligence.
-
-These systems include:
-
-- Multi-modal Perception
-- Semantic Understanding
-- Emotion
-- Homeostasis
-- Memory
-- Working Memory
-- Identity
-- Planning
-- Decision Making
-- Tool Execution
-
-Each subsystem evolves independently while cooperating through a shared cognitive runtime.
-
-The language model is **not the brain**.
-
-It is a **reasoning engine** used by the cognitive system whenever probabilistic inference or language generation is required.
-
----
-
-# Cognitive Architecture
+While Shiva 2.0 handles sub-millisecond continuous control in Rust, the high-level cognitive system coordinates perception, memory, homeostasis, and reasoning:
 
 ```text
                     Environment
@@ -96,220 +110,143 @@ It is a **reasoning engine** used by the cognitive system whenever probabilistic
           (Text • Vision • Audio • Sensors)
                           │
                           ▼
-               Semantic Understanding
-                      (BERT)
+               Semantic Understanding (BERT)
                           │
                           ▼
-              Orchestration & Event System
+               Orchestration & Event System
                           │
           ┌───────────────┴───────────────┐
           ▼                               ▼
       Cognitive Swarm             Environment Interface
-   (Multiple Cognitive Nodes)
-          │
-          ▼
-  Emotion • Memory • Scratchpad
-  Identity • Planning • Goals
+   (Multiple Cognitive Nodes)             (Shiva 2.0 Rust Runtime)
+          │                                       │
+          ▼                                       ▼
+  Emotion • Memory • Scratchpad           Sub-Millisecond
+  Identity • Planning • Goals             Continuous Control
           │
           ▼
  Shared Working Memory & Coordination
           │
           ▼
-      Reasoning Engine
- (SmolLM2 / Frankenmerged Models)
+      Reasoning Engine (SmolLM2 / Frankenmerged Models)
           │
           ▼
  Tool Selection & Action Execution
-          │
-          ▼
- Updated Internal Cognitive State
 ```
 
 ---
 
-# Design Philosophy
+# Core Concepts & Algorithms
 
-Shiva is built on the belief that intelligence emerges from the interaction of specialized systems rather than from a single algorithm.
+### 1. Soft Actor-Critic (SAC) — Fast Decision Engine
+- **Objective**: Maximum Entropy RL maximizing expected return and entropy:
+  $$J(\pi) = \sum_{t=0}^T \mathbb{E}_{(s_t, a_t)} \left[ r(s_t, a_t) + \alpha \mathcal{H}(\pi(\cdot|s_t)) \right]$$
+- **Role**: Provides the baseline continuous motor policy proposal $a_{\text{fast}}$ with policy confidence $w_{\text{fast}}$.
 
-Our design principles are:
+### 2. Implicit Quantile Networks (IQN) — Long Vision Engine
+- **Objective**: Distributional RL modeling quantile return function $Z_\tau(s, a)$ with cosine embeddings $\psi_j(\tau) = \text{ReLU}\left(\sum_{i=0}^{K-1} \cos(i \pi \tau) w_{ij} + b_j\right)$.
+- **Role**: Computes Conditional Value-at-Risk ($\text{CVaR}_\alpha$) over lower-tail returns to derive risk weight $w_{\text{risk}}$.
 
-- Intelligence is a continuous process, not a prompt-response cycle.
-- Cognition should be modular and independently evolvable.
-- Memory must influence future behaviour.
-- Emotion is an adaptive computational signal rather than a human simulation.
-- Working memory and long-term memory are fundamentally different.
-- Internal regulation is necessary for stable autonomous behaviour.
-- Large Language Models are reasoning engines—not complete cognitive architectures.
+### 3. TD3 + Latent Skill Embedding ($z$) — Explorer Engine
+- **Objective**: Twin Delayed DDPG conditioned on latent skill vector $z \in \mathbb{R}^{16}$ with target policy smoothing and delayed updates.
+- **Role**: Detects physical parameter drift (friction, mass, wind) and produces drift-compensated action $a_{\text{explore}}$.
 
----
+### 4. Constrained Policy Optimization (CPO) — GuardRail Engine
+- **Objective**: Enforces safety constraints $J^C(\theta) \le d_k$ under KL bounds using convex projection.
+- **Role**: Immutable post-pass safety filter enforcing slew-rate limits $|a_t - a_{t-1}| \le \Delta_{\text{max}}$, rule masks $m_t$, and boundary clamping.
 
-# Core Concepts
-
-### Cognitive Operating System
-
-Shiva is designed as an operating system for cognition rather than a conversational assistant. It continuously processes events, manages internal state, schedules cognitive processes, and coordinates perception, reasoning, memory, and action.
-
----
-
-### Cognitive Swarm
-
-Instead of relying on a single monolithic controller, Shiva distributes cognition across multiple autonomous cognitive nodes.
-
-Each node maintains its own local:
-
-- Emotional State
-- Memory Access
-- Scratchpad
-- Planning Process
-- Cognitive Executive
-
-Collective intelligence emerges through cooperation between these nodes.
+### 5. Random Network Distillation (RND) — Failure Engine
+- **Objective**: Feature prediction error between target network $f^*(s)$ and predictor network $\hat{f}_\theta(s)$:
+  $$E(s) = \frac{1}{k} \|\hat{f}_\theta(s) - f^*(s)\|_2^2$$
+- **Role**: Out-of-distribution (OOD) novelty detector triggering emergency safety fallbacks.
 
 ---
 
-### Emotion & Homeostasis
+# Codebase Structure So Far
 
-Emotion is treated as a computational mechanism that regulates:
-
-- Attention
-- Learning Priority
-- Memory Formation
-- Decision Bias
-- Resource Allocation
-
-Homeostasis continuously monitors internal variables such as energy, safety, stress, and cognitive load to maintain stable behaviour.
-
----
-
-### Persistent Memory
-
-Shiva separates memory into multiple layers:
-
-- Working Memory
-- Episodic Memory
-- Semantic Memory
-- Narrative Identity
-
-Rather than storing every interaction, memories are consolidated based on emotional salience, novelty, and long-term utility.
-
----
-
-### Shared Reasoning Engine
-
-The reasoning engine performs probabilistic inference and language generation using open-weight language models.
-
-Current implementation targets:
-
-- SmolLM2
-
-Future versions aim to support:
-
-- Dynamic Model Migration
-- Online Frankenmerging
-- Specialized Reasoning Models
-
----
-
-### Embodied Intelligence
-
-Shiva is designed to operate directly on physical devices.
-
-When installed on a smartphone, tablet, robot, or embedded platform, existing hardware becomes part of the cognitive system.
-
-For example:
-
-- Camera → Vision
-- Microphone → Hearing
-- GPS → Spatial Awareness
-- Accelerometer → Balance
-- Storage → Long-Term Memory
-- Applications → Effectors
-
-Rather than controlling a device through isolated API calls, Shiva treats the device itself as the body of an autonomous cognitive agent.
+```text
+Shiva/
+├── Cargo.toml                  # Rust Crate Manifest
+├── README.md                   # System Architecture & Documentation
+├── src/
+│   ├── lib.rs                  # Crate Root (algorithms, brain, nodes)
+│   ├── algorithms/             # Layer 1: Pure RL Mathematical Implementations
+│   │   ├── mod.rs
+│   │   ├── softActorCriticNetwork.rs
+│   │   ├── cpo.rs
+│   │   ├── implicitQuantileNetworks.rs
+│   │   ├── td3.rs
+│   │   └── rnd.rs
+│   ├── brain/                  # Layer 2: Decoupling Middleware & Facades
+│   │   ├── mod.rs
+│   │   ├── core/
+│   │   │   ├── mod.rs
+│   │   │   ├── dto.rs          # SIMD-aligned C DTOs (align(64))
+│   │   │   └── traits.rs       # 5 Core Brain Trait Contracts
+│   │   ├── policy/
+│   │   │   ├── mod.rs
+│   │   │   └── facade.rs       # SacPolicyAdapter
+│   │   ├── constraint/
+│   │   │   ├── mod.rs
+│   │   │   └── facade.rs       # CpoConstraintAdapter
+│   │   ├── risk/
+│   │   │   ├── mod.rs
+│   │   │   └── facade.rs       # IqnRiskAdapter
+│   │   ├── skill_vault/
+│   │   │   ├── mod.rs
+│   │   │   └── facade.rs       # Td3SkillAdapter
+│   │   └── anomaly/
+│   │       ├── mod.rs
+│   │       └── facade.rs       # RndAnomalyAdapter
+│   └── nodes/                  # Layer 3: Domain Execution & Orchestrator
+│       ├── mod.rs
+│       ├── core/
+│       │   ├── mod.rs
+│       │   └── shared_state.rs # EnvironmentStack Shared Memory
+│       ├── failure_engine/
+│       │   ├── mod.rs
+│       │   └── node.rs         # FailureEngineNode (Phase 1)
+│       ├── fast_decision/
+│       │   ├── mod.rs
+│       │   └── node.rs         # FastDecisionNode (Phase 2)
+│       ├── long_vision/
+│       │   ├── mod.rs
+│       │   └── node.rs         # LongVisionNode (Phase 2)
+│       ├── explorer/
+│       │   ├── mod.rs
+│       │   └── node.rs         # ExplorerNode (Phase 2)
+│       ├── guardrail/
+│       │   ├── mod.rs
+│       │   └── node.rs         # GuardRailNode (Phase 3)
+│       └── orchestrator/
+│           ├── mod.rs
+│           └── mothership.rs   # MothershipOrchestrator (3-Phase Pipeline)
+```
 
 ---
 
 # Technology Stack
 
-### Perception
-
-- BERT
-- Vision Encoders
-- Audio Encoders
-
-### Cognition
-
-- Emotional Appraisal
-- Homeostasis
-- Memory Graphs
-- Scratchpad Reasoning
-- Swarm Cognition
-
-### Reasoning
-
-- SmolLM2
-- Frankenmerged Language Models
-
-### Reinforcement Learning
-
-- Soft Actor-Critic (SAC)
-- Prioritized Experience Replay
-- Multi-Agent Reinforcement Learning
-
-### Infrastructure
-
-- PyTorch
-- SQLite
-- Plugin-Based Cognitive Runtime
-- Distributed Swarm Architecture
+### Real-Time Runtime (Shiva 2.0)
+- **Language**: Rust (Edition 2021)
+- **Memory Management**: Zero dynamic heap allocations on hot paths (`#[repr(C, align(64))]` stack arrays)
+- **Architecture**: 3-Layer Decoupled Architecture enforcing Dependency Inversion
+- **Algorithms**: SAC, CPO, IQN, TD3 + $z$, RND
 
 ---
 
-# Roadmap
-
-### Phase 1 — Foundations *(Complete)*
-
-- Emotion Engine
-- Homeostasis
-- Memory System
-
-### Phase 2 — Cognitive Runtime *(In Progress)*
-
-- Cognitive Swarm
-- Shared Reasoning Engine
-- Scratchpad Coordination
-- Tool Execution Framework
-
-### Phase 3 — Embodied Intelligence
-
-- Smartphone Runtime
-- Robotics Integration
-- Continuous Background Cognition
-- Multi-modal Perception
-
-### Phase 4 — Distributed Intelligence
-
-- Multi-device Cognition
-- Online Frankenmerging
-- Model Migration
-- Distributed Memory Synchronization
-
----
 
 # Mission
 
-> **Shiva is not another AI assistant built around a language model. It is a Cognitive Operating System that transforms existing hardware into autonomous cognitive agents capable of continuously perceiving, reasoning, remembering, planning, and acting.**
-
-<img width="1051" height="881" alt="Screenshot 2026-07-11 at 11 25 46 PM" src="https://github.com/user-attachments/assets/e3c32e2a-2f01-403a-a807-db6fe3b56d0a" />
-
+> **Shiva is not another AI assistant built around a language model. It is a Cognitive Operating System paired with a sub-millisecond real-time continuous control engine that transforms existing hardware into autonomous cognitive agents capable of continuously perceiving, reasoning, remembering, planning, projecting safety, and acting.**
 
 ---
 
 ## Contributing
-Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Cognitive Science, and Robotics. 
+Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Systems Programming (Rust), Cognitive Science, and Robotics.
 
 ## License
 Released under the Apache 2.0 License.
 
 ---
-**Intelligence is more than prediction. It is perception, regulation, memory, adaptation, and action.**
+**Intelligence is more than prediction. It is perception, regulation, memory, adaptation, safety projection, and action.**
