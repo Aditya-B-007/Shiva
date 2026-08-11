@@ -3,13 +3,12 @@
 # shiva.ai
 ### An Open-Source Cognitive Operating System & Sub-Millisecond Autonomous Runtime
 
-*"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, projects safety, and acts in sub-millisecond real time."*
-
-![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
-![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)
-![Python](https://img.shields.io/badge/python-3.11+-green.svg)
-![Status](https://img.shields.io/badge/status-active%20development-orange.svg)
-![Research](https://img.shields.io/badge/research-cognitive%20AI-purple.svg)
+*"Building AI that doesn't just predict—it perceives, remembers, regulates, plans, projects safety, and acts in sub-millisecond real time."*![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
+![Language](https://img.shields.io/badge/language-Rust%201.75+-orange.svg)
+![Runtime](https://img.shields.io/badge/runtime-Sub--Millisecond-brightgreen.svg)
+![Architecture](https://img.shields.io/badge/architecture-5--Node%20Mothership-purple.svg)
+![Pipeline](https://img.shields.io/badge/pipeline-3--Phase%20Consensus-blueviolet.svg)
+![Status](https://img.shields.io/badge/status-active%20development-green.svg)
 
 </div>
 ---
@@ -30,28 +29,44 @@ Shiva explores a fundamentally different direction: a **Cognitive Operating Syst
 
 Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) across three decoupled software layers, ensuring zero dynamic heap allocations on real-time execution hot paths (`#[repr(C, align(64))]`).
 
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      src/nodes/ — Domain Layer                          │
-│   • FailureEngineNode   • FastDecisionNode   • LongVisionNode           │
-│   • ExplorerNode        • GuardRailNode      • MothershipOrchestrator   │
-└────────────────────────────────────┬────────────────────────────────────┘
-                                     │ (Depends ONLY on Brain Traits)
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│               src/brain/ — Decoupling Middleware & DTOs                 │
-│   • Core Traits: AnomalyDetector, PolicyEvaluator, RiskEvaluator, etc.  │
-│   • SIMD Aligned DTOs: PolicyProposal, ConstraintResult, etc.           │
-│   • Facade Adapters: SacPolicyAdapter, CpoConstraintAdapter, etc.       │
-└────────────────────────────────────┬────────────────────────────────────┘
-                                     │ (Wraps RL Math Algorithms)
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                 src/algorithms/ — Mathematical RL Layer                 │
-│   • Soft Actor-Critic (SAC)       • Constrained Policy Opt (CPO)       │
-│   • Implicit Quantile Nets (IQN)  • TD3 + Latent Skill Embedding (z)    │
-│   • Random Network Distillation (RND Curiosity)                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Nodes["Layer 3: src/nodes/ — Domain Layer & Ensemble"]
+        FE["FailureEngineNode (Phase 1)"]
+        FD["FastDecisionNode (Phase 2)"]
+        LV["LongVisionNode (Phase 2)"]
+        EX["ExplorerNode (Phase 2)"]
+        GR["GuardRailNode (Phase 3)"]
+        MO["MothershipOrchestrator"]
+    end
+
+    subgraph Brain["Layer 2: src/brain/ — Middleware & Traits"]
+        AD["AnomalyDetector Trait"]
+        PE["PolicyEvaluator Trait"]
+        RE["RiskEvaluator Trait"]
+        AE["AdaptationEvaluator Trait"]
+        CE["ConstraintEvaluator Trait"]
+    end
+
+    subgraph Algorithms["Layer 1: src/algorithms/ — RL Math"]
+        RND["Random Network Distillation (RND)"]
+        SAC["Soft Actor-Critic (SAC)"]
+        IQN["Implicit Quantile Networks (IQN)"]
+        TD3["TD3 + Latent Skill Vector (z)"]
+        CPO["Constrained Policy Optimization (CPO)"]
+    end
+
+    FE -->|depends on| AD
+    FD -->|depends on| PE
+    LV -->|depends on| RE
+    EX -->|depends on| AE
+    GR -->|depends on| CE
+
+    AD -.->|facade adapter| RND
+    PE -.->|facade adapter| SAC
+    RE -.->|facade adapter| IQN
+    AE -.->|facade adapter| TD3
+    CE -.->|facade adapter| CPO
 ```
 
 ---
@@ -60,19 +75,42 @@ Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) acros
 
 At the core of Shiva 2.0's real-time control loop is the **5-Node Mothership Ensemble**, coordinated by the **3-Phase Consensus Pipeline** inside `MothershipOrchestrator`:
 
-```text
-                      Shared Memory EnvironmentStack
-                         [repr(C, align(64))]
-                                  │
-                                  ▼
- ┌─────────────────────────────────────────────────────────────────┐
- │ PHASE 1: Anomaly Evaluation (Failure Engine / RND)              │
- │ • Evaluates feature error E(S_t) = (1/k) ||f̂_θ(S_t) - f*(S_t)||^2│
- │ • IF E(S_t) > OOD_Threshold → Short-circuit to emergency action  │
- └────────────────────────────────┬────────────────────────────────┘
-                                  │ (Nominal State)
-                                  ▼
- ┌─────────────────────────────────────────────────────────────────┐
+```mermaid
+graph TD
+    ENV["Environment Sensors"] --> ES["EnvironmentStack<br/>#[repr(C, align(64))]"]
+
+    subgraph P1["Phase 1: Anomaly Gate"]
+        FE["Failure Engine (RND)"]
+    end
+
+    subgraph P2["Phase 2: Unconstrained Candidate Consensus"]
+        FD["Fast Decision Engine (SAC)<br/>a_fast, w_fast"]
+        LV["Long Vision Engine (IQN)<br/>w_risk"]
+        EX["Explorer Engine (TD3+z)<br/>a_explore, w_adapt"]
+        MERGE["Normalized Weighted Reduction<br/>a_candidate = (w_fast·a_fast + w_risk·a_fast + w_adapt·a_explore) / (w_fast + w_risk + w_adapt + ε)"]
+    end
+
+    subgraph P3["Phase 3: Immutable Safety Shield"]
+        GR["GuardRail Engine (CPO)<br/>• Slew-Rate Limiting |Δa| ≤ Δ_max<br/>• Rule-Mask Interlocks m_t<br/>• Convex Set Boundary Projection"]
+    end
+
+    ES --> FE
+    FE -->|OOD Trigger E(S_t) > Threshold| EMG["Emergency Recovery Action<br/>a_emergency (Short-Circuit)"]
+    FE -->|Nominal State| FD
+    FE -->|Nominal State| LV
+    FE -->|Nominal State| EX
+
+    FD --> MERGE
+    LV --> MERGE
+    EX --> MERGE
+
+    MERGE --> GR
+    GR -->|Vetoed| PREV["Hold Previous Action<br/>a*_{t-1} (Safety Fallback)"]
+    GR -->|Safe Projected Command| HW["Final Hardware Dispatch<br/>a*_t ∈ [-1, 1]³²"]
+```
+
+---
+��─────────────────────────────────┐
  │ PHASE 2: Unconstrained Candidate Consensus                      │
  │ 1. Fast Decision Engine (SAC): Baseline motor proposal a_fast   │
  │ 2. Long Vision Engine (IQN): Multi-step CVaR_α risk weight w_risk│
