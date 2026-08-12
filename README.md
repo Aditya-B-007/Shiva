@@ -77,7 +77,8 @@ graph TB
 
 # The 5-Node Mothership Ensemble & 3-Phase Consensus Pipeline
 At the core of Shiva 2.0's real-time control loop is the 5-Node Mothership Ensemble, coordinated by the 3-Phase Consensus Pipeline inside MothershipOrchestrator:
-```
+
+```mermaid
 graph TD
     ENV["Environment Sensors"] --> ES["EnvironmentStack<br/>#[repr(C, align(64))]"]
 
