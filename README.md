@@ -27,11 +27,13 @@ They generate responses conditioned on inputs but do not continuously perceive t
 Shiva explores a fundamentally different direction: a **Cognitive Operating System (Cognitive OS)** paired with **Shiva 2.0**—a zero-LLM, sub-millisecond autonomous real-time continuous control runtime written in Rust.
 
 ---
-
+# Example use case of shiva.ai
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/ff651c7a-4d12-4bcd-9c0d-762ba982b992" />
+(Image made using AI, but information is from THIS repo only)
 # The 3-Layer Decoupled Architecture (Shiva 2.0)
 
 Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) across three decoupled software layers, ensuring zero dynamic heap allocations on real-time execution hot paths (`#[repr(C, align(64))]`).
-<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/ff651c7a-4d12-4bcd-9c0d-762ba982b992" />
+
 
 ```mermaid
 graph TB
@@ -109,6 +111,7 @@ graph TD
     GR -->|Safe Projected Command| HW["Final Hardware Dispatch<br/>a*_t ∈ [-1, 1]^n"]
 ```
 # Code base structure so far:
+```
 Shiva/
 ├── Cargo.toml                  # Rust Crate Manifest
 ├── README.md                   # System Architecture & Documentation
@@ -165,6 +168,7 @@ Shiva/
         └── orchestrator/
             ├── mod.rs
             └── mothership.rs   # MothershipOrchestrator (3-Phase Pipeline)
+```
 # Contributing
 Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Systems Programming (Rust), Cognitive Science, and Robotics.
 
