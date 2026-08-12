@@ -27,13 +27,10 @@ They generate responses conditioned on inputs but do not continuously perceive t
 Shiva explores a fundamentally different direction: a **Cognitive Operating System (Cognitive OS)** paired with **Shiva 2.0**—a zero-LLM, sub-millisecond autonomous real-time continuous control runtime written in Rust.
 
 ---
-# Example use case of shiva.ai
-<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/ff651c7a-4d12-4bcd-9c0d-762ba982b992" />
-(Image made using AI, but information is from THIS repo only)
 
 # The 3-Layer Decoupled Architecture (Shiva 2.0)
-Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) across three decoupled software layers, ensuring zero dynamic heap allocations on real-time execution hot paths (`#[repr(C, align(64))]`).
 
+Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) across three decoupled software layers, ensuring zero dynamic heap allocations on real-time execution hot paths (`#[repr(C, align(64))]`).
 
 ```mermaid
 graph TB
@@ -76,61 +73,43 @@ graph TB
 ```
 
 # The 5-Node Mothership Ensemble & 3-Phase Consensus Pipeline
-
-At the core of Shiva 2.0's real-time control loop is the **5-Node Mothership Ensemble**, coordinated by the **3-Phase Consensus Pipeline** inside `MothershipOrchestrator`:
-
-```mermaid
-flowchart TD
-
-    ENV["Environment Sensors"]
-    ES["EnvironmentStack<br/>repr C align 64"]
+At the core of Shiva 2.0's real-time control loop is the 5-Node Mothership Ensemble, coordinated by the 3-Phase Consensus Pipeline inside MothershipOrchestrator:
+```
+graph TD
+    ENV["Environment Sensors"] --> ES["EnvironmentStack<br/>#[repr(C, align(64))]"]
 
     subgraph P1["Phase 1: Anomaly Gate"]
-        FE["Failure Engine<br/>RND Anomaly Detection"]
+        FE["Failure Engine (RND)"]
     end
 
     subgraph P2["Phase 2: Unconstrained Candidate Consensus"]
-        FD["Fast Decision Engine<br/>SAC<br/>a_fast, w_fast"]
-
-        LV["Long Vision Engine<br/>IQN<br/>w_risk"]
-
-        EX["Explorer Engine<br/>TD3 + z<br/>a_explore, w_adapt"]
-
-        MERGE["Normalized Weighted Reduction<br/>Candidate Action"]
+        FD["Fast Decision Engine (SAC)<br/>a_fast, w_fast"]
+        LV["Long Vision Engine (IQN)<br/>w_risk"]
+        EX["Explorer Engine (TD3+z)<br/>a_explore, w_adapt"]
+        MERGE["Normalized Weighted Reduction<br/>a_candidate = (w_fast * a_fast + w_risk * a_fast + w_adapt * a_explore) / (w_fast + w_risk + w_adapt + ε)"]
     end
 
     subgraph P3["Phase 3: Immutable Safety Shield"]
-        GR["GuardRail Engine<br/>CPO Post-Pass Projection<br/>Slew Rate Limiting<br/>Rule Mask Interlocks<br/>Convex Set Projection"]
+        GR["GuardRail Engine (CPO)<br/>- Slew-Rate Limiting |Δa| ≤ Δ_max<br/>- Rule-Mask Interlocks m_t<br/>- Convex Set Boundary Projection"]
     end
 
-    EMG["Emergency Recovery Action<br/>a_emergency"]
-
-    PREV["Hold Previous Action<br/>Safety Fallback"]
-
-    HW["Final Hardware Dispatch<br/>Safe Command a_t"]
-
-    ENV --> ES
     ES --> FE
-
-    FE -->|"OOD Trigger"| EMG
-
-    FE -->|"Nominal State"| FD
-    FE -->|"Nominal State"| LV
-    FE -->|"Nominal State"| EX
+    FE -->|OOD Trigger E(S_t) > Threshold| EMG["Emergency Recovery Action<br/>a_emergency (Short-Circuit)"]
+    FE -->|Nominal State| FD
+    FE -->|Nominal State| LV
+    FE -->|Nominal State| EX
 
     FD --> MERGE
     LV --> MERGE
     EX --> MERGE
 
     MERGE --> GR
-
-    GR -->|"Vetoed"| PREV
-    GR -->|"Safe Projected Command"| HW
+    GR -->|Vetoed| PREV["Hold Previous Action<br/>a*_{t-1} (Safety Fallback)"]
+    GR -->|Safe Projected Command| HW["Final Hardware Dispatch<br/>a*_t ∈ [-1, 1]^n"]
 ```
 
 
 # Code base structure so far:
-```
 Shiva/
 ├── Cargo.toml                  # Rust Crate Manifest
 ├── README.md                   # System Architecture & Documentation
@@ -187,9 +166,7 @@ Shiva/
         └── orchestrator/
             ├── mod.rs
             └── mothership.rs   # MothershipOrchestrator (3-Phase Pipeline)
-```
 # Contributing
 Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Systems Programming (Rust), Cognitive Science, and Robotics.
-
 
 
