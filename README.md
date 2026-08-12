@@ -30,8 +30,9 @@ Shiva explores a fundamentally different direction: a **Cognitive Operating Syst
 # Example use case of shiva.ai
 <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/ff651c7a-4d12-4bcd-9c0d-762ba982b992" />
 (Image made using AI, but information is from THIS repo only)
-# The 3-Layer Decoupled Architecture (Shiva 2.0)
 
+
+# The 3-Layer Decoupled Architecture (Shiva 2.0)
 Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) across three decoupled software layers, ensuring zero dynamic heap allocations on real-time execution hot paths (`#[repr(C, align(64))]`).
 
 
