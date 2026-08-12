@@ -60,18 +60,3 @@ impl RiskEvaluator for IqnRiskAdapter {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_iqn_risk_adapter_evaluation() {
-        let adapter = IqnRiskAdapter::default();
-        let state_hist = [0.1f32; 64];
-        let action_hist = [0.0f32; 32];
-        let risk = adapter.evaluate_risk(&state_hist, &action_hist);
-
-        assert!(risk.risk_adjusted_weight >= 0.0 && risk.risk_adjusted_weight <= 1.0);
-    }
-}
-

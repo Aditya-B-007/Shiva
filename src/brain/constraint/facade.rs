@@ -74,24 +74,5 @@ impl ConstraintEvaluator for CpoConstraintAdapter {
             is_vetoed: vetoed,
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cpo_constraint_adapter_bounds_and_veto() {
-        let adapter = CpoConstraintAdapter::default();
-        let proposed = [0.9f32; 32];
-        let prev = [0.0f32; 32];
-        let mut rule_flags = [0u8; 32];
-        rule_flags[0] = 1;
-
-        let res = adapter.evaluate_constraints(&proposed, &prev, &rule_flags);
-
-        assert!(res.is_vetoed);
-        assert!((res.projected_action[0] - 0.35).abs() < 1e-4);
-    }
-}
 

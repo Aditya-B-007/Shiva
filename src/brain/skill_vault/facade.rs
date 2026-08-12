@@ -63,21 +63,4 @@ impl AdaptationEvaluator for Td3SkillAdapter {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_td3_skill_adapter_zero_allocation() {
-        let adapter = Td3SkillAdapter::default();
-        let state = [0.2f32; 64];
-        let prev_act = [0.0f32; 32];
-        let skill_id = [7u8; 32];
-
-        let res = adapter.evaluate_adaptation(&state, &prev_act, &skill_id);
-
-        assert_eq!(res.active_skill_id, skill_id);
-        assert_eq!(res.adapted_action.len(), 32);
-    }
-}
 

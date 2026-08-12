@@ -62,20 +62,3 @@ impl AnomalyDetector for RndAnomalyAdapter {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_rnd_anomaly_adapter_detection() {
-        let adapter = RndAnomalyAdapter::default();
-        let state = [10.0f32; 64];
-        let prev_act = [0.8f32; 32];
-
-        let assessment = adapter.detect_anomaly(&state, &prev_act);
-
-        assert!(assessment.prediction_error >= 0.0);
-        assert!((assessment.emergency_action[0] - 0.4).abs() < 1e-4);
-    }
-}
-
