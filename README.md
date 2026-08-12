@@ -126,6 +126,8 @@ flowchart TD
 
     GR -->|"Vetoed"| PREV
     GR -->|"Safe Projected Command"| HW
+```
+
 
 # Code base structure so far:
 ```
