@@ -70,3 +70,101 @@ graph TB
     RE -.->|facade adapter| IQN
     AE -.->|facade adapter| TD3
     CE -.->|facade adapter| CPO
+
+
+# The 5-Node Mothership Ensemble & 3-Phase Consensus Pipeline
+At the core of Shiva 2.0's real-time control loop is the 5-Node Mothership Ensemble, coordinated by the 3-Phase Consensus Pipeline inside MothershipOrchestrator:
+
+graph TD
+    ENV["Environment Sensors"] --> ES["EnvironmentStack<br/>#[repr(C, align(64))]"]
+
+    subgraph P1["Phase 1: Anomaly Gate"]
+        FE["Failure Engine (RND)"]
+    end
+
+    subgraph P2["Phase 2: Unconstrained Candidate Consensus"]
+        FD["Fast Decision Engine (SAC)<br/>a_fast, w_fast"]
+        LV["Long Vision Engine (IQN)<br/>w_risk"]
+        EX["Explorer Engine (TD3+z)<br/>a_explore, w_adapt"]
+        MERGE["Normalized Weighted Reduction<br/>a_candidate = (w_fast * a_fast + w_risk * a_fast + w_adapt * a_explore) / (w_fast + w_risk + w_adapt + ε)"]
+    end
+
+    subgraph P3["Phase 3: Immutable Safety Shield"]
+        GR["GuardRail Engine (CPO)<br/>- Slew-Rate Limiting |Δa| ≤ Δ_max<br/>- Rule-Mask Interlocks m_t<br/>- Convex Set Boundary Projection"]
+    end
+
+    ES --> FE
+    FE -->|OOD Trigger E(S_t) > Threshold| EMG["Emergency Recovery Action<br/>a_emergency (Short-Circuit)"]
+    FE -->|Nominal State| FD
+    FE -->|Nominal State| LV
+    FE -->|Nominal State| EX
+
+    FD --> MERGE
+    LV --> MERGE
+    EX --> MERGE
+
+    MERGE --> GR
+    GR -->|Vetoed| PREV["Hold Previous Action<br/>a*_{t-1} (Safety Fallback)"]
+    GR -->|Safe Projected Command| HW["Final Hardware Dispatch<br/>a*_t ∈ [-1, 1]^n"]
+
+# Code base structure so far:
+Shiva/
+├── Cargo.toml                  # Rust Crate Manifest
+├── README.md                   # System Architecture & Documentation
+└── src/
+    ├── lib.rs                  # Crate Root (algorithms, brain, nodes)
+    ├── algorithms/             # Layer 1: Pure RL Mathematical Implementations
+    │   ├── mod.rs
+    │   ├── softActorCriticNetwork.rs
+    │   ├── cpo.rs
+    │   ├── implicitQuantileNetworks.rs
+    │   ├── td3.rs
+    │   └── rnd.rs
+    ├── brain/                  # Layer 2: Decoupling Middleware & Facades
+    │   ├── mod.rs
+    │   ├── core/
+    │   │   ├── mod.rs
+    │   │   ├── dto.rs          # SIMD-aligned C DTOs (align(64))
+    │   │   └── traits.rs       # 5 Core Brain Trait Contracts
+    │   ├── policy/
+    │   │   ├── mod.rs
+    │   │   └── facade.rs       # SacPolicyAdapter
+    │   ├── constraint/
+    │   │   ├── mod.rs
+    │   │   └── facade.rs       # CpoConstraintAdapter
+    │   ├── risk/
+    │   │   ├── mod.rs
+    │   │   └── facade.rs       # IqnRiskAdapter
+    │   ├── skill_vault/
+    │   │   ├── mod.rs
+    │   │   └── facade.rs       # Td3SkillAdapter
+    │   └── anomaly/
+    │       ├── mod.rs
+    │       └── facade.rs       # RndAnomalyAdapter
+    └── nodes/                  # Layer 3: Domain Execution & Orchestrator
+        ├── mod.rs
+        ├── core/
+        │   ├── mod.rs
+        │   └── shared_state.rs # EnvironmentStack Shared Memory
+        ├── failure_engine/
+        │   ├── mod.rs
+        │   └── node.rs         # FailureEngineNode (Phase 1)
+        ├── fast_decision/
+        │   ├── mod.rs
+        │   └── node.rs         # FastDecisionNode (Phase 2)
+        ├── long_vision/
+        │   ├── mod.rs
+        │   └── node.rs         # LongVisionNode (Phase 2)
+        ├── explorer/
+        │   ├── mod.rs
+        │   └── node.rs         # ExplorerNode (Phase 2)
+        ├── guardrail/
+        │   ├── mod.rs
+        │   └── node.rs         # GuardRailNode (Phase 3)
+        └── orchestrator/
+            ├── mod.rs
+            └── mothership.rs   # MothershipOrchestrator (3-Phase Pipeline)
+# Contributing
+Shiva is an open-source research project. We welcome contributions in Deep Learning, Reinforcement Learning, Systems Programming (Rust), Cognitive Science, and Robotics.
+
+
