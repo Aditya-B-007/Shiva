@@ -31,6 +31,7 @@ Shiva explores a fundamentally different direction: a **Cognitive Operating Syst
 # The 3-Layer Decoupled Architecture (Shiva 2.0)
 
 Shiva 2.0 strictly enforces the **Dependency Inversion Principle** (SOLID) across three decoupled software layers, ensuring zero dynamic heap allocations on real-time execution hot paths (`#[repr(C, align(64))]`).
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/ff651c7a-4d12-4bcd-9c0d-762ba982b992" />
 
 ```mermaid
 graph TB
@@ -70,11 +71,11 @@ graph TB
     RE -.->|facade adapter| IQN
     AE -.->|facade adapter| TD3
     CE -.->|facade adapter| CPO
-
+```
 
 # The 5-Node Mothership Ensemble & 3-Phase Consensus Pipeline
 At the core of Shiva 2.0's real-time control loop is the 5-Node Mothership Ensemble, coordinated by the 3-Phase Consensus Pipeline inside MothershipOrchestrator:
-
+```
 graph TD
     ENV["Environment Sensors"] --> ES["EnvironmentStack<br/>#[repr(C, align(64))]"]
 
@@ -106,7 +107,7 @@ graph TD
     MERGE --> GR
     GR -->|Vetoed| PREV["Hold Previous Action<br/>a*_{t-1} (Safety Fallback)"]
     GR -->|Safe Projected Command| HW["Final Hardware Dispatch<br/>a*_t ∈ [-1, 1]^n"]
-
+```
 # Code base structure so far:
 Shiva/
 ├── Cargo.toml                  # Rust Crate Manifest
