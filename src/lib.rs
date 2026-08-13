@@ -18,4 +18,8 @@
 
 pub mod algorithms;
 pub mod brain;
+pub mod controlSystemInterfaceProtocol;
 pub mod nodes;
+
+pub use controlSystemInterfaceProtocol as cscp;
+
