@@ -74,5 +74,4 @@ impl ConstraintEvaluator for CpoConstraintAdapter {
             is_vetoed: vetoed,
         }
     }
-
-
+}

@@ -1,10 +1,15 @@
 [package]
-name = "shiva"
-version = "2.0.0"
+name = "shiva-ai"
+version = "0.1.0"
 edition = "2021"
-description = "Shiva 2.0 — Sub-millisecond autonomous real-time continuous control runtime"
+description = "Shiva 2.0 — Sub-millisecond cognitive operating system & 5-node autonomous runtime"
 license = "Apache-2.0"
+repository = "https://github.com/Aditya-B-007/Shiva"
+keywords = ["reinforcement-learning", "robotics", "real-time", "autonomous", "control"]
+categories = ["science", "embedded", "no-std"]
+readme = "README.md"
 
 [lib]
 name = "shiva"
 path = "src/lib.rs"
+crate-type = ["lib", "cdylib", "staticlib"]
