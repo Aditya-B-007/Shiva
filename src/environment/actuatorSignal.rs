@@ -51,6 +51,16 @@ impl ActuatorSignal {
         Self::new(ActuatorConfig::default())
     }
 
+    /// Constructs an ActuatorSignal buffer using explicit `ShivaConfig` parameters.
+    pub fn from_config(config: &crate::config::ShivaConfig) -> Self {
+        Self::new(ActuatorConfig {
+            channel_count: 32,
+            min_signal: config.min_signal,
+            max_signal: config.max_signal,
+        })
+    }
+
+
     /// 2b. write: Method to stage an action signal array into the actuator output buffer.
     /// Clamps input signals to configured range [min_signal, max_signal].
     pub fn write(&mut self, action_signal: &[f32; 32]) {

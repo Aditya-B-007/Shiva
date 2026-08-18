@@ -91,6 +91,16 @@ impl EnvironmentMatrix {
         Self::new()
     }
 
+    /// Constructs an EnvironmentMatrix using explicit `ShivaConfig` parameters.
+    pub fn from_config(config: &crate::config::ShivaConfig) -> Self {
+        Self {
+            num_columns: 3,
+            max_rows: config.matrix_rows,
+            rows: Vec::with_capacity(config.matrix_rows),
+        }
+    }
+
+
     /// 1b. pushRowToMatrix (Public): Pushes a new row into the matrix.
     /// Pops the oldest row if capacity exceeds x.
     /// DESIGNATED FOR USE BY `src/protocol/shivaSide.rs` ONLY.

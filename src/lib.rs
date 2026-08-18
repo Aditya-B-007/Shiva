@@ -1,28 +1,33 @@
-// Shiva 2.0 — Crate Root
+// Shiva 2.0 — Crate Root & Framework API
 //
 // WHAT THIS FILE DOES:
-// Declares and registers the three architectural layers of the Shiva runtime:
-//   1. `algorithms` — Pure mathematical RL implementations (SAC, CPO, IQN, TD3+z, RND).
-//   2. `brain`      — Decoupling middleware: trait contracts, DTOs, facade adapters.
-//   3. `nodes`      — Domain execution layer: 5-Node Mothership Ensemble + Orchestrator.
+// Registers all 4 architectural layers of the Shiva runtime + framework configuration
+// and exposes a clean `prelude` module for external developers using the framework.
+// Also registers `ffi` module for C, C++, and Python cross-language integration.
 //
-// HOW IT DOES IT:
-// Rust's module system requires explicit `mod` declarations at the crate root
-// so the compiler discovers and links all sub-modules.
-//
-// WHY WE DO THIS:
-// Enforces the Dependency Inversion Principle at compile time:
-//   `nodes` → depends on `brain` (trait interfaces only)
-//   `brain` → depends on `algorithms` (facade adapters wrapping math)
-//   `nodes` NEVER imports from `algorithms` directly.
+// MODULE STRUCTURE:
+// ├── algorithms  — Layer 1: Pure RL mathematics (SAC, CPO, IQN, TD3+z, RND)
+// ├── brain       — Layer 2: Decoupling middleware & SIMD DTOs
+// ├── environment — State window queue (EnvironmentMatrix) & actuator buffer (ActuatorSignal)
+// ├── nodes       — Layer 3: 5-Node Mothership Ensemble & Orchestrator
+// ├── protocol    — Protocol communication (systemSide, shivaSide, middleMan)
+// ├── config      — Framework configuration engine (ShivaConfig, ShivaBuilder)
+// └── ffi         — C-ABI exports for C, C++, Python, ROS2, and RTOS bindings
 
 pub mod algorithms;
 pub mod brain;
+pub mod config;
 pub mod environment;
+pub mod ffi;
 pub mod nodes;
 pub mod protocol;
 
 pub use protocol as cscp;
 
-
-
+/// Framework Prelude exposing essential types for end-user applications
+pub mod prelude {
+    pub use crate::config::{ShivaBuilder, ShivaConfig};
+    pub use crate::environment::{ActuatorSignal, EnvironmentMatrix, MatrixRow, NodeType};
+    pub use crate::nodes::{EnvironmentStack, MothershipOrchestrator};
+    pub use crate::protocol::{ManInTheMiddle, ShivaOutputDTO, SystemInputDTO};
+}
