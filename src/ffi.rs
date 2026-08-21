@@ -7,8 +7,20 @@
 // HOW IT DOES IT:
 // Uses raw pointers with strict null-checks and `std::panic::catch_unwind` guards
 // to ensure Rust unwinding panics never cross FFI boundaries into host languages.
+//
+// FFI ERROR CODES:
+//   0  = success
+//  -1  = NULL handle
+//  -2  = NULL input or output pointer
+//  -3  = runtime panic
+//  -4  = configuration error
+//  -5  = node execution error
+//  -6  = safety error
+//  -7  = transport/dispatch error
+//  -8  = general runtime error
 
 use crate::config::ShivaBuilder;
+use crate::framework::error::ShivaError;
 use crate::protocol::middleMan::ManInTheMiddle;
 use crate::protocol::shivaSide::ShivaOutputDTO;
 use crate::protocol::systemSide::SystemInputDTO;
@@ -16,6 +28,17 @@ use std::panic::catch_unwind;
 
 /// Opaque pointer handle to a Shiva `ManInTheMiddle` runtime instance
 pub type ShivaHandle = *mut ManInTheMiddle;
+
+/// Maps a ShivaError to an FFI error code.
+fn error_to_ffi_code(err: &ShivaError) -> i32 {
+    match err {
+        ShivaError::Configuration(_) => -4,
+        ShivaError::Node { .. } => -5,
+        ShivaError::Safety(_) => -6,
+        ShivaError::Transport(_) => -7,
+        ShivaError::Runtime(_) => -8,
+    }
+}
 
 /// Allocates and initializes a new Shiva runtime instance.
 ///
@@ -26,6 +49,9 @@ pub type ShivaHandle = *mut ManInTheMiddle;
 ///
 /// # Returns
 /// A non-null pointer to `ManInTheMiddle` on success, or `std::ptr::null_mut()` on failure.
+///
+/// NOTE: The returned runtime now always has a fully-wired MothershipOrchestrator.
+/// The safety pipeline cannot be bypassed.
 #[no_mangle]
 pub extern "C" fn shiva_create(
     matrix_rows: usize,
@@ -43,7 +69,7 @@ pub extern "C" fn shiva_create(
         let instance = ShivaBuilder::new()
             .with_matrix_rows(rows)
             .with_actuator_limits(min, max)
-            .build();
+            .build_legacy();
 
         Box::into_raw(Box::new(instance))
     });

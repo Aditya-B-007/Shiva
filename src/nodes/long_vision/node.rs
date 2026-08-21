@@ -28,6 +28,8 @@
 // average but have catastrophic failure modes.
 
 use crate::brain::core::traits::RiskEvaluator;
+use crate::framework::node::{Node, Phase, NodeOutcome};
+use crate::framework::error::ShivaError;
 use crate::nodes::core::shared_state::EnvironmentStack;
 
 /// LongVisionNode — Phase 2 trajectory tail-risk evaluator.
@@ -74,5 +76,25 @@ impl LongVisionNode {
 
         // Write result to the shared EnvironmentStack.
         env.risk_output = assessment;
+    }
+}
+
+/// Node trait implementation for LongVisionNode.
+impl Node for LongVisionNode {
+    fn name(&self) -> &str {
+        "LongVision"
+    }
+
+    fn phase(&self) -> Phase {
+        Phase::Consensus
+    }
+
+    fn execute(&self, env: &mut EnvironmentStack) -> Result<NodeOutcome, ShivaError> {
+        let assessment = self.evaluator.evaluate_risk(
+            &env.state_history,
+            &env.action_history,
+        );
+        env.risk_output = assessment;
+        Ok(NodeOutcome::Continue)
     }
 }

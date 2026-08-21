@@ -34,6 +34,14 @@
 // │                      + w_adapt · a_explore[i])                                │
 // │                      / (w_fast + w_risk + w_adapt + ε)                        │
 // │                                                                               │
+// │   SEMANTIC EXPLANATION:                                                        │
+// │   The Long Vision Engine acts as a CRITIC/MODULATOR, not an independent actor.│
+// │   Its weight w_risk adjusts how strongly the Fast Decision policy is trusted:  │
+// │   - w_risk > 0 → amplifies a_fast (trajectory looks safe, trust the policy)   │
+// │   - w_risk ≈ 0 → dampens a_fast (high tail risk, reduce policy confidence)    │
+// │   This is INTENTIONAL: IQN evaluates trajectory risk and modulates the         │
+// │   primary policy accordingly, rather than proposing its own action.            │
+// │                                                                               │
 // │   WHY NORMALIZED REDUCTION:                                                   │
 // │   The denominator (w_fast + w_risk + w_adapt + ε) ensures the net weight      │
 // │   coefficient is strictly normalized to ~1.0, preventing accidental torque     │
@@ -56,6 +64,9 @@
 // - Multiple AI engines reach weighted consensus without magnitude collapse (Phase 2)
 // - No unchecked command ever reaches physical hardware (Phase 3)
 
+use crate::framework::diagnostics::CycleDiagnostics;
+use crate::framework::error::ShivaError;
+use crate::framework::orchestrator::Orchestrator;
 use crate::nodes::core::shared_state::EnvironmentStack;
 use crate::nodes::failure_engine::FailureEngineNode;
 use crate::nodes::fast_decision::FastDecisionNode;
@@ -69,6 +80,10 @@ use crate::nodes::guardrail::GuardRailNode;
 /// HOW: Holds all 5 engine nodes and executes them in strict order with short-circuits.
 /// WHY: Guarantees that every control cycle produces exactly one safe, normalized
 /// action command for hardware dispatch within sub-millisecond timing constraints.
+///
+/// This is one implementation of the `Orchestrator` trait. Users can implement
+/// alternative orchestration strategies (e.g., simpler PID + safety, or custom
+/// ensemble architectures) by implementing the trait directly.
 pub struct MothershipOrchestrator {
     /// Phase 1: Failure Engine (RND anomaly detection).
     /// WHAT: First line of defense — detects out-of-distribution states.
@@ -81,6 +96,7 @@ pub struct MothershipOrchestrator {
 
     /// Phase 2b: Long Vision Engine (IQN risk evaluation).
     /// WHAT: Evaluates trajectory tail-risk and produces risk-adjusted weight w_risk.
+    /// NOTE: Acts as a CRITIC/MODULATOR — w_risk modulates a_fast, not an independent action.
     long_vision: LongVisionNode,
 
     /// Phase 2c: Explorer Engine (TD3 + z skill adaptation).
@@ -116,27 +132,17 @@ impl MothershipOrchestrator {
         }
     }
 
-    /// Single public method: executes one complete 3-phase consensus cycle.
-    ///
-    /// WHAT: Runs the full Mothership control pipeline and writes `final_action` to
-    /// the EnvironmentStack.
-    ///
-    /// HOW: Executes the 3-phase pipeline described at the top of this file:
-    ///   Phase 1 → anomaly check (short-circuit if OOD)
-    ///   Phase 2 → consensus of Fast Decision + Long Vision + Explorer
-    ///   Phase 3 → safety projection via GuardRail (short-circuit if vetoed)
-    ///
-    /// MATHEMATICAL MERGE (Phase 2):
-    ///   a_candidate[i] = \frac{w_{fast} \cdot a_{fast}[i] + w_{risk} \cdot a_{fast}[i] + w_{adapt} \cdot a_{explore}[i]}{w_{fast} + w_{risk} + w_{adapt} + \epsilon}
-    ///
-    /// WHY: Produces exactly one deterministic, safe, normalized action per cycle.
-    pub fn execute_cycle(&self, env: &mut EnvironmentStack) {
+    /// Internal method: executes the 3-phase pipeline.
+    /// Used by both the legacy `execute_cycle` and the new `Orchestrator` trait impl.
+    fn run_pipeline(&self, env: &mut EnvironmentStack, diagnostics: &mut CycleDiagnostics) {
         // Increment the monotonic cycle counter.
         env.cycle_counter += 1;
 
         // Reset emergency flag at the start of each cycle.
         // Each phase may set it to true if an emergency condition is detected.
         env.is_emergency = false;
+        env.emergency_reason = None;
+        env.safety_veto_reason = None;
 
         // ═══════════════════════════════════════════════════════════════
         // PHASE 1: Anomaly Evaluation (Failure Engine / RND)
@@ -145,6 +151,7 @@ impl MothershipOrchestrator {
         // WHAT: Check if the environment state S_t is out-of-distribution.
         // WHY: Must happen FIRST — if the state is unknown, no policy output is trustworthy.
         self.failure_engine.execute(env);
+        diagnostics.anomaly_score = env.anomaly_output.prediction_error;
 
         // SHORT-CIRCUIT: If the Failure Engine detected an anomaly, bypass everything.
         // Dispatch the pre-compiled emergency recovery action directly.
@@ -153,6 +160,8 @@ impl MothershipOrchestrator {
             // The emergency_action is a safe deceleration command (e.g., 0.5 × prev_action).
             env.final_action = env.anomaly_output.emergency_action;
             env.is_emergency = true;
+            env.emergency_reason = Some("Out-of-distribution state detected by Failure Engine (RND)");
+            diagnostics.set_emergency("OOD state detected — dispatching emergency action".to_string());
             return;
         }
 
@@ -176,9 +185,23 @@ impl MothershipOrchestrator {
 
         // MERGE: Normalized weighted reduction to produce a_candidate.
         //
-        // FORMULA:
+        // FORMULA (documented consensus semantics):
+        //
         //   a_candidate[i] = (w_fast · a_fast[i] + w_risk · a_fast[i] + w_adapt · a_explore[i])
         //                  / (w_fast + w_risk + w_adapt + ε)
+        //
+        // SEMANTIC EXPLANATION:
+        // Long Vision (IQN) is a CRITIC, not an actor. It does not produce its own action.
+        // Its weight w_risk modulates the trust placed in the Fast Decision (SAC) policy:
+        //   - When w_risk is high: trajectory looks safe → amplify a_fast contribution
+        //   - When w_risk is low:  high tail risk → dampen a_fast, shift toward a_explore
+        //
+        // This is equivalent to:
+        //   a_candidate[i] = ((w_fast + w_risk) · a_fast[i] + w_adapt · a_explore[i])
+        //                  / (w_fast + w_risk + w_adapt + ε)
+        //
+        // The combined weight (w_fast + w_risk) represents the total confidence in the
+        // primary policy, modulated by trajectory risk assessment.
         //
         // WHY NORMALIZED:
         //   The denominator (w_fast + w_risk + w_adapt + ε) strictly normalizes the
@@ -189,6 +212,9 @@ impl MothershipOrchestrator {
         let w_fast = env.policy_output.confidence_weight;
         let w_risk = env.risk_output.risk_adjusted_weight;
         let w_adapt = env.adaptation_output.adaptation_weight;
+
+        // Record consensus weights for diagnostics/observability
+        diagnostics.set_consensus_weights(w_fast, w_risk, w_adapt);
 
         // Small epsilon to prevent division by zero in degenerate edge cases.
         let epsilon = 1e-8_f32;
@@ -221,11 +247,42 @@ impl MothershipOrchestrator {
         if env.constraint_output.is_vetoed {
             env.final_action = env.prev_action;
             env.is_emergency = true;
+            env.safety_veto_reason = Some("GuardRail Engine vetoed action — constraint violation");
+            diagnostics.set_safety_veto("Action vetoed by GuardRail — falling back to prev_action".to_string());
             return;
         }
 
         // Normal exit: the projected (safety-filtered) action becomes the final command.
         // This is the definitive motor command a*_t dispatched to physical actuators.
         env.final_action = env.constraint_output.projected_action;
+    }
+
+    /// Legacy public method: executes one complete 3-phase consensus cycle.
+    ///
+    /// WHAT: Runs the full Mothership control pipeline and writes `final_action` to
+    /// the EnvironmentStack.
+    ///
+    /// NOTE: Preserved for backward compatibility with code that calls this directly.
+    /// The `Orchestrator` trait implementation delegates to the same pipeline.
+    pub fn execute_cycle(&self, env: &mut EnvironmentStack) {
+        let mut diagnostics = CycleDiagnostics::default();
+        self.run_pipeline(env, &mut diagnostics);
+    }
+}
+
+/// Orchestrator trait implementation for MothershipOrchestrator.
+///
+/// WHAT: Makes the 5-node Mothership architecture a pluggable framework component.
+/// HOW: Delegates to the internal 3-phase pipeline with diagnostics collection.
+/// WHY: Users can replace the entire orchestration strategy while retaining the
+///      framework's lifecycle, error handling, and hardware dispatch infrastructure.
+impl Orchestrator for MothershipOrchestrator {
+    fn execute_cycle(
+        &self,
+        env: &mut EnvironmentStack,
+        diagnostics: &mut CycleDiagnostics,
+    ) -> Result<(), ShivaError> {
+        self.run_pipeline(env, diagnostics);
+        Ok(())
     }
 }
