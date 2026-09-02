@@ -225,7 +225,7 @@ impl SoftActorCritic {
         let mut critic_loss = 0.0;
 
         for trans in batch.iter() {
-            let (action, log_prob) = self.actor.sample_action(&trans.state);
+            let (_action, log_prob) = self.actor.sample_action(&trans.state);
             let (q1, q2) = self.critic.evaluate(&trans.state, &trans.action);
             let min_q = q1.min(q2);
             

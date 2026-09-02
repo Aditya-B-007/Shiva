@@ -24,7 +24,7 @@ use crate::framework::error::ShivaError;
 use crate::protocol::middleMan::ManInTheMiddle;
 use crate::protocol::shivaSide::ShivaOutputDTO;
 use crate::protocol::systemSide::SystemInputDTO;
-use std::panic::catch_unwind;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Opaque pointer handle to a Shiva `ManInTheMiddle` runtime instance
 pub type ShivaHandle = *mut ManInTheMiddle;
@@ -58,7 +58,7 @@ pub extern "C" fn shiva_create(
     min_signal: f32,
     max_signal: f32,
 ) -> ShivaHandle {
-    let result = catch_unwind(|| {
+    let result = catch_unwind(AssertUnwindSafe(|| {
         let rows = if matrix_rows == 0 { 20 } else { matrix_rows };
         let (min, max) = if (min_signal - max_signal).abs() < f32::EPSILON {
             (-1.0, 1.0)
@@ -72,7 +72,7 @@ pub extern "C" fn shiva_create(
             .build_legacy();
 
         Box::into_raw(Box::new(instance))
-    });
+    }));
 
     result.unwrap_or(std::ptr::null_mut())
 }
@@ -86,11 +86,11 @@ pub extern "C" fn shiva_destroy(handle: ShivaHandle) {
     if handle.is_null() {
         return;
     }
-    let _ = catch_unwind(|| {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
         unsafe {
             let _ = Box::from_raw(handle);
         }
-    });
+    }));
 }
 
 /// Executes a single 3-phase consensus cycle.
@@ -118,12 +118,12 @@ pub extern "C" fn shiva_step(
         return -2;
     }
 
-    let result = catch_unwind(|| unsafe {
+    let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         let shiva = &mut *handle;
         let in_dto = *input;
         let out_dto = shiva.counter(in_dto);
         *output = out_dto;
-    });
+    }));
 
     match result {
         Ok(_) => 0,
