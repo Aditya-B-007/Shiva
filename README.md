@@ -31,6 +31,114 @@ Autonomous physical hardware—whether a **thrust-vectoring rocket engine**, a *
 
 ---
 
+# 🚀 Developer Quickstart Guide
+
+Developers can integrate Shiva into any robot, drone, gimbal, or simulation loop in **3 simple steps**:
+
+### Step 1: Build the Shiva Core Engine
+```bash
+# Clone the repository
+git clone https://github.com/Aditya-B-007/Shiva.git
+cd Shiva
+
+# Build the optimized release C-ABI dynamic library
+cargo build --release
+```
+*This compiles `target/release/libshiva.dylib` (macOS), `libshiva.so` (Linux), or `shiva.dll` (Windows).*
+
+---
+
+### Step 2: Choose Your Language & Import Shiva
+
+Shiva is plug-and-play across all major programming languages:
+
+#### 🐍 Python Developers (Robotics, Gym, PyBullet, ROS2)
+```python
+from shiva import ShivaRuntime
+
+# 1. Initialize the 5-node consensus runtime
+shiva = ShivaRuntime(matrix_rows=30, min_signal=-1.0, max_signal=1.0)
+
+# 2. Ingest sensor telemetry and get safe motor actions (< 4 microseconds)
+input_data = ShivaRuntime.create_default_input()
+input_data.state[0] = 0.42     # e.g., Pitch angle / sensor reading
+input_data.timestep = 1        # Control loop tick
+
+output = shiva.step(input_data)
+print(f"Motor Command: {output.final_action[0]:.4f}")
+```
+
+#### 🦀 Rust Developers (Embedded, Real-Time OS)
+```rust
+use shiva::prelude::*;
+
+let mut shiva = ShivaBuilder::new()
+    .with_matrix_rows(30)
+    .with_actuator_limits(-1.0, 1.0)
+    .build();
+
+let mut input = SystemInputDTO::default();
+input.state[0] = 0.42;
+input.timestep = 1;
+
+let output = shiva.counter(input);
+println!("Motor Command: {:.4}", output.final_action[0]);
+```
+
+#### ⚡ C / C++ Developers (Microcontrollers, ROS, Flight Software)
+```cpp
+#include "cpp/shiva.hpp"
+
+shiva::ShivaRuntime runtime(30, -1.0f, 1.0f);
+auto input = shiva::ShivaRuntime::create_default_input();
+input.state[0] = 0.42f;
+input.timestep = 1;
+
+shiva::OutputPacket output = runtime.step(input);
+std::cout << "Motor Command: " << output.final_action[0] << std::endl;
+```
+
+---
+
+### Step 3: Plug into Your Real-Time Control Loop
+
+Here is the standard 100 Hz – 10 kHz execution pattern used across all robotics and simulation stacks:
+
+```mermaid
+flowchart LR
+    Sensors["1. Read Telemetry<br/>(IMU, Encoders, LiDAR)"]
+    DTO["2. Populate<br/>SystemInputDTO"]
+    Shiva["3. Shiva Runtime<br/>shiva.step(input)<br/>(~3.1 µs)"]
+    Actuators["4. Apply Commands<br/>(Motors, ESCs, Gimbals)"]
+
+    Sensors --> DTO --> Shiva --> Actuators
+    Actuators -. Next Loop Tick .-> Sensors
+```
+
+---
+
+# 🛠️ Data Flow & Telemetry Reference
+
+Shiva uses **`#[repr(C, align(64))]`** cache-aligned Data Transfer Objects (DTOs) for zero-copy memory dispatch:
+
+### `SystemInputDTO` (Sensors to Shiva)
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `state[64]` | `[f32; 64]` | Normalized sensor telemetry (angles, linear velocities, angular rates, distances, temperatures). |
+| `setpoint[32]` | `[f32; 32]` | Target reference goals (desired heading, goal altitude, target waypoint coordinates). |
+| `hard_boundaries[32]` | `[u8; 32]` | Hardware safety flags (`1` = proximity warning, limit-switch hit, actuator overheat; `0` = normal). |
+| `previous_rewards` | `f32` | Performance feedback scalar from the previous step used for continuous policy adaptation. |
+| `timestep` | `u64` | Monotonically increasing control loop step count. |
+
+### `ShivaOutputDTO` (Shiva to Hardware Actuators)
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `final_action[32]` | `[f32; 32]` | Safe, slew-rate-limited, CPO-projected continuous motor commands in $[-1.0, 1.0]$. |
+| `mask[32]` | `[u8; 32]` | Actuator channel interlock status (`0` = active output, `1` = channel locked/vetoed for safety). |
+| `reward` | `f32` | Instantaneous estimated value / performance metric. |
+
+---
+
 # Example Use Case
 
 https://github.com/user-attachments/assets/b06969f0-133d-4858-97a7-9d479e752aa8
@@ -133,88 +241,6 @@ python3 test/test_atari_game.py --headless --episodes 50
    - **Hardware Rule-Mask Filtering**: Applies hardware safety interlocks (zeroing out commands on locked/faulted channels).
    - **Convex Boundary Projection**: Clamps output commands strictly to $[-1.0, 1.0]$.
    - **Veto Fallback**: Reverts to previous safe state if candidate actions violate hard safety bounds.
-
----
-
-# Multi-Language Integration (Rust, C, C++, Python)
-
-Shiva 2.0 provides native, zero-overhead bindings across major software stacks:
-
-### 🦀 1. Rust Integration
-```rust
-use shiva::prelude::*;
-
-fn main() {
-    let mut shiva = ShivaBuilder::new()
-        .with_matrix_rows(30)
-        .with_actuator_limits(-1.0, 1.0)
-        .build();
-
-    let input = SystemInputDTO {
-        state: [0.1; 64],
-        setpoint: [0.0; 32],
-        state_stack: [0.0; 64],
-        action_stack: [0.0; 32],
-        hard_boundaries: [0; 32],
-        previous_rewards: 1.0,
-        timestep: 1,
-    };
-
-    let output: ShivaOutputDTO = shiva.counter(input);
-    println!("Action[0]: {:.4}", output.final_action[0]);
-}
-```
-
-### ⚡ 2. C Integration (`bindings/c/shiva.h`)
-```c
-#include "shiva.h"
-#include <stdio.h>
-
-int main() {
-    ShivaHandle shiva = shiva_create(30, -1.0f, 1.0f);
-    
-    SystemInputDTO input;
-    shiva_default_input(&input);
-    input.timestep = 1;
-
-    ShivaOutputDTO output;
-    if (shiva_step(shiva, &input, &output) == 0) {
-        printf("Dispatched Action[0]: %.4f\n", output.final_action[0]);
-    }
-
-    shiva_destroy(shiva);
-    return 0;
-}
-```
-
-### 🚀 3. C++ Integration (`bindings/cpp/shiva.hpp`)
-```cpp
-#include "cpp/shiva.hpp"
-#include <iostream>
-
-int main() {
-    shiva::ShivaRuntime runtime(30, -1.0f, 1.0f);
-    
-    auto input = shiva::ShivaRuntime::create_default_input();
-    input.timestep = 1;
-
-    shiva::OutputPacket output = runtime.step(input);
-    std::cout << "Safe Action[0]: " << output.final_action[0] << std::endl;
-    return 0;
-}
-```
-
-### 🐍 4. Python Integration (`bindings/python/shiva.py`)
-```python
-from shiva import ShivaRuntime
-
-shiva = ShivaRuntime(matrix_rows=30, min_signal=-1.0, max_signal=1.0)
-input_dto = ShivaRuntime.create_default_input()
-input_dto.timestep = 1
-
-output_dto = shiva.step(input_dto)
-print(f"Safe Action[0]: {output_dto.final_action[0]:.4f}")
-```
 
 ---
 
