@@ -8,8 +8,17 @@ repository = "https://github.com/Aditya-B-007/Shiva"
 keywords = ["reinforcement-learning", "robotics", "real-time", "autonomous", "control"]
 categories = ["science", "embedded", "no-std"]
 readme = "README.md"
+include = [
+    "src/**/*",
+    "examples/**/*",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+    "bindings/**/*",
+]
 
 [lib]
 name = "shiva"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib", "staticlib"]
+

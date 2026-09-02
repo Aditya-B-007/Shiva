@@ -66,6 +66,7 @@ pub extern "C" fn shiva_create(
             (min_signal, max_signal)
         };
 
+        #[allow(deprecated)]
         let instance = ShivaBuilder::new()
             .with_matrix_rows(rows)
             .with_actuator_limits(min, max)

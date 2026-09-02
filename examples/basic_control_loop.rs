@@ -13,10 +13,11 @@ fn main() {
     let mut shiva = ShivaBuilder::new()
         .with_matrix_rows(30)              // Override matrix depth to 30 rows
         .with_actuator_limits(-1.0, 1.0)   // Clamp actuator motor signals to [-1.0, 1.0]
-        .build();
+        .build()
+        .expect("Failed to initialize Shiva runtime");
 
     println!("Shiva framework initialized successfully!");
-    println!("Matrix Rows Capacity: {}", shiva.matrix.max_rows);
+    println!("Matrix Rows Capacity: {}", shiva.config().matrix_rows);
 
     // 2. Simulate continuous control loop for 5 timesteps
     for step in 1..=5 {

@@ -29,15 +29,15 @@ use crate::nodes::core::shared_state::EnvironmentStack;
 pub enum Phase {
     /// Phase 1: Anomaly gate — executes before any policy computation.
     /// Nodes in this phase can short-circuit the entire pipeline.
-    AnomalyGate = 0,
+    AnomalyGate,
 
     /// Phase 2: Candidate consensus — multiple engines propose actions.
     /// All Phase 2 nodes execute; their outputs are merged by the orchestrator.
-    Consensus = 1,
+    Consensus,
 
     /// Phase 3: Safety shield — immutable post-pass safety filter.
     /// Nodes in this phase enforce physical constraints and can veto actions.
-    SafetyShield = 2,
+    SafetyShield,
 
     /// User-defined phase for custom pipeline extensions.
     /// Custom phases execute after all standard phases (ordered by value).

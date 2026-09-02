@@ -18,7 +18,6 @@
 use crate::environment::actuatorSignal::ActuatorSignal;
 use crate::environment::environmentMatrix::EnvironmentMatrix;
 use crate::framework::diagnostics::CycleDiagnostics;
-use crate::framework::error::ShivaError;
 use crate::framework::orchestrator::Orchestrator;
 use crate::nodes::core::shared_state::EnvironmentStack;
 use crate::nodes::orchestrator::MothershipOrchestrator;

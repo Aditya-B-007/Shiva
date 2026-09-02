@@ -14,9 +14,7 @@
 // - The old ManInTheMiddle construction path is preserved via build_legacy()
 
 use std::env;
-use crate::framework::adapter::{InputAdapter, OutputAdapter};
 use crate::framework::error::{ConfigError, ShivaError};
-use crate::framework::orchestrator::Orchestrator;
 use crate::protocol::middleMan::ManInTheMiddle;
 use crate::runtime::ShivaRuntime;
 

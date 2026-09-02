@@ -29,7 +29,7 @@ use crate::config::ShivaConfig;
 use crate::environment::environmentMatrix::EnvironmentMatrix;
 use crate::framework::adapter::{InputAdapter, OutputAdapter};
 use crate::framework::diagnostics::CycleDiagnostics;
-use crate::framework::error::{RuntimeError, ShivaError};
+use crate::framework::error::ShivaError;
 use crate::framework::lifecycle::LifecycleState;
 use crate::framework::orchestrator::Orchestrator;
 use crate::nodes::core::shared_state::EnvironmentStack;
