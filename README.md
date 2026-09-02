@@ -33,6 +33,15 @@ Autonomous physical hardware—whether a **thrust-vectoring rocket engine**, a *
 
 # Example Use Case
 
+
+
+https://github.com/user-attachments/assets/b06969f0-133d-4858-97a7-9d479e752aa8
+
+
+
+https://github.com/user-attachments/assets/0a3f43a1-c365-4a7b-9844-04c36231ebfe
+
+
 <img width="1536" height="1024" alt="Shiva Framework Control Loop" src="https://github.com/user-attachments/assets/ff651c7a-4d12-4bcd-9c0d-762ba982b992" />
 
 *From rocket gimbal stabilization & quadrotor landing to multi-joint robotic arm manipulation: Shiva ingests raw sensor telemetry, runs real-time anomaly detection, multi-policy consensus, and CPO safety projection to output deterministic motor commands.*
