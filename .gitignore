@@ -1,12 +1,29 @@
-# Byte-compiled / optimized / DLL files
+# Rust / Cargo
+target/
+**/*.rs.bk
+*.rmeta
+Cargo.lock.bk
+
+# Compiled Dynamic & Static Libraries
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.obj
+*.o
+
+# Python Byte-compiled / optimized / caches
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
 
-# C extensions
-*.so
-.gitignore
-# Distribution / packaging
+# Distribution / packaging / virtual environments
 .Python
 build/
 develop-eggs/
@@ -26,7 +43,20 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# OS files
+# Virtual Environments
+.env
+.venv
+venv/
+ENV/
+env/
+
+# Databases & Runtime storage
+*.db
+*.sqlite
+checkpoints/
+logs/
+
+# OS-generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -35,14 +65,11 @@ MANIFEST
 ehthumbs.db
 Thumbs.db
 
-# Databases & Runtime storage
-*.db
-*.sqlite
-checkpoints/
-
-# Environment files
-.env
-.venv
-venv/
-ENV/
-env/
+# IDEs and Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
