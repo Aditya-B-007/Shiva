@@ -30,6 +30,8 @@
 // dispatch, ensuring no command can damage physical actuators or violate safety rules.
 
 use crate::brain::core::traits::ConstraintEvaluator;
+use crate::framework::node::{Node, Phase, NodeOutcome};
+use crate::framework::error::ShivaError;
 use crate::nodes::core::shared_state::EnvironmentStack;
 
 /// GuardRailNode — Phase 3 immutable safety projection filter.
@@ -90,6 +92,42 @@ impl GuardRailNode {
         // flag the emergency. The orchestrator will fall back to prev_action.
         if result.is_vetoed {
             env.is_emergency = true;
+        }
+    }
+}
+
+/// Node trait implementation for GuardRailNode.
+///
+/// WHAT: Makes GuardRailNode a proper framework plugin.
+/// HOW: Wraps the existing execute() method with Node trait semantics.
+///      Returns ShortCircuit when the action is vetoed.
+/// WHY: Enables pipeline flow control through the framework's Node contract.
+impl Node for GuardRailNode {
+    fn name(&self) -> &str {
+        "GuardRail"
+    }
+
+    fn phase(&self) -> Phase {
+        Phase::SafetyShield
+    }
+
+    fn execute(&self, env: &mut EnvironmentStack) -> Result<NodeOutcome, ShivaError> {
+        let result = self.evaluator.evaluate_constraints(
+            &env.candidate_action,
+            &env.prev_action,
+            &env.rule_flags,
+        );
+
+        env.constraint_output = result;
+
+        if result.is_vetoed {
+            env.is_emergency = true;
+            env.safety_veto_reason = Some("GuardRail Engine vetoed action — constraint violation");
+            Ok(NodeOutcome::ShortCircuit {
+                reason: "Action vetoed by GuardRail — falling back to prev_action",
+            })
+        } else {
+            Ok(NodeOutcome::Continue)
         }
     }
 }

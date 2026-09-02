@@ -144,9 +144,9 @@ pub struct EnvironmentStack {
     /// WHY: The projected_action is the final safe-to-execute command.
     pub constraint_output: ConstraintResult,
 
-    // ═══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
     // FINAL OUTPUT — Dispatched to actuators / hardware
-    // ═══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
 
     /// The final action dispatched to physical actuators after all 3 phases.
     /// WHAT: The definitive motor command a*_t ∈ [-1, 1]^32.
@@ -157,12 +157,29 @@ pub struct EnvironmentStack {
     /// Monotonically increasing execution cycle counter.
     /// WHAT: Tracks how many complete orchestrator cycles have executed.
     /// WHY: Used for diagnostics, logging, and delayed policy update scheduling.
+    /// NOTE: This is the FRAMEWORK cycle counter, NOT the external environment timestep.
     pub cycle_counter: u64,
+
+    /// External environment timestep from the input DTO.
+    /// WHAT: The timestamp/step-index provided by the external system.
+    /// WHY: Preserved separately from cycle_counter so the framework's internal
+    ///      cycle count is independent of the external environment clock.
+    pub input_timestep: u64,
 
     /// Emergency flag indicating the system entered a safety fallback state.
     /// WHAT: Set to true if Phase 1 (anomaly) or Phase 3 (constraint veto) triggered.
     /// WHY: Downstream systems can check this flag for emergency telemetry / logging.
     pub is_emergency: bool,
+
+    /// Human-readable reason for the emergency, if triggered.
+    /// WHAT: Describes why the emergency was triggered (OOD detection, veto, etc.).
+    /// WHY: Enables downstream systems to log and diagnose emergency conditions.
+    pub emergency_reason: Option<&'static str>,
+
+    /// Human-readable reason for a safety veto, if triggered.
+    /// WHAT: Describes why the safety pipeline vetoed the proposed action.
+    /// WHY: Enables downstream systems to log and diagnose safety interventions.
+    pub safety_veto_reason: Option<&'static str>,
 }
 
 impl Default for EnvironmentStack {
@@ -189,7 +206,10 @@ impl Default for EnvironmentStack {
 
             final_action: [0.0; 32],
             cycle_counter: 0,
+            input_timestep: 0,
             is_emergency: false,
+            emergency_reason: None,
+            safety_veto_reason: None,
         }
     }
 }

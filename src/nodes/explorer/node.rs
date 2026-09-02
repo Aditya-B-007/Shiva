@@ -25,6 +25,8 @@
 // for these dynamic changes without retraining the base policy.
 
 use crate::brain::core::traits::AdaptationEvaluator;
+use crate::framework::node::{Node, Phase, NodeOutcome};
+use crate::framework::error::ShivaError;
 use crate::nodes::core::shared_state::EnvironmentStack;
 
 /// ExplorerNode — Phase 2 drift compensation and skill adaptation engine.
@@ -74,5 +76,26 @@ impl ExplorerNode {
 
         // Write result to the shared EnvironmentStack.
         env.adaptation_output = proposal;
+    }
+}
+
+/// Node trait implementation for ExplorerNode.
+impl Node for ExplorerNode {
+    fn name(&self) -> &str {
+        "Explorer"
+    }
+
+    fn phase(&self) -> Phase {
+        Phase::Consensus
+    }
+
+    fn execute(&self, env: &mut EnvironmentStack) -> Result<NodeOutcome, ShivaError> {
+        let proposal = self.evaluator.evaluate_adaptation(
+            &env.current_state,
+            &env.prev_action,
+            &env.active_skill_id,
+        );
+        env.adaptation_output = proposal;
+        Ok(NodeOutcome::Continue)
     }
 }

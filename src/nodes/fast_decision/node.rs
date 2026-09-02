@@ -23,6 +23,8 @@
 // how strongly this proposal influences the merged candidate action.
 
 use crate::brain::core::traits::PolicyEvaluator;
+use crate::framework::node::{Node, Phase, NodeOutcome};
+use crate::framework::error::ShivaError;
 use crate::nodes::core::shared_state::EnvironmentStack;
 
 /// FastDecisionNode — Phase 2 baseline motor policy engine.
@@ -68,5 +70,29 @@ impl FastDecisionNode {
 
         // Write result to the shared EnvironmentStack.
         env.policy_output = proposal;
+    }
+}
+
+/// Node trait implementation for FastDecisionNode.
+///
+/// WHAT: Makes FastDecisionNode a proper framework plugin.
+/// HOW: Wraps the existing execute() method with Node trait semantics.
+/// WHY: Enables registration in the framework's plugin system.
+impl Node for FastDecisionNode {
+    fn name(&self) -> &str {
+        "FastDecision"
+    }
+
+    fn phase(&self) -> Phase {
+        Phase::Consensus
+    }
+
+    fn execute(&self, env: &mut EnvironmentStack) -> Result<NodeOutcome, ShivaError> {
+        let proposal = self.evaluator.evaluate_policy(
+            &env.current_state,
+            &env.prev_action,
+        );
+        env.policy_output = proposal;
+        Ok(NodeOutcome::Continue)
     }
 }

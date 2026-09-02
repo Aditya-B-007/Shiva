@@ -6,7 +6,7 @@
 //
 // HOW IT DOES IT:
 // - Configures max rows `x` from the `SHIVA_MATRIX_ROWS` environment variable (default: 20).
-// - Enforces row capacity via `_popFromMatrix` when `pushRowToMatrix` is called by `shivaSide.rs`.
+// - Uses a fixed-capacity ring buffer to store rows without allocations.
 // - Implements `_accessPolicy` to restrict read permissions per `NodeType`.
 
 use std::env;
@@ -66,8 +66,12 @@ pub struct EnvironmentMatrix {
     pub num_columns: usize,
     /// Maximum capacity of rows x (read from SHIVA_MATRIX_ROWS env var, default 20)
     pub max_rows: usize,
-    /// Internal row buffer storing up to `max_rows`
-    rows: Vec<MatrixRow>,
+    /// Pre-allocated ring buffer (allocated once at construction, never resized)
+    buffer: Vec<MatrixRow>,
+    /// Write cursor index (next position to write to)
+    head: usize,
+    /// Number of valid rows currently stored (0..=max_rows)
+    len: usize,
 }
 
 impl EnvironmentMatrix {
@@ -78,11 +82,14 @@ impl EnvironmentMatrix {
             .ok()
             .and_then(|val| val.parse::<usize>().ok())
             .unwrap_or(20);
+        let max_rows = if max_rows == 0 { 1 } else { max_rows }; // Prevent division by zero
 
         Self {
             num_columns: 3,
             max_rows,
-            rows: Vec::with_capacity(max_rows),
+            buffer: vec![MatrixRow::default(); max_rows],
+            head: 0,
+            len: 0,
         }
     }
 
@@ -93,29 +100,25 @@ impl EnvironmentMatrix {
 
     /// Constructs an EnvironmentMatrix using explicit `ShivaConfig` parameters.
     pub fn from_config(config: &crate::config::ShivaConfig) -> Self {
+        let max_rows = if config.matrix_rows == 0 { 1 } else { config.matrix_rows };
         Self {
             num_columns: 3,
-            max_rows: config.matrix_rows,
-            rows: Vec::with_capacity(config.matrix_rows),
+            max_rows,
+            buffer: vec![MatrixRow::default(); max_rows],
+            head: 0,
+            len: 0,
         }
     }
 
 
     /// 1b. pushRowToMatrix (Public): Pushes a new row into the matrix.
-    /// Pops the oldest row if capacity exceeds x.
     /// DESIGNATED FOR USE BY `src/protocol/shivaSide.rs` ONLY.
     pub fn pushRowToMatrix(&mut self, action: [f32; 32], reward: f32, mask: [u8; 32]) {
-        let new_row = MatrixRow {
-            action,
-            reward,
-            mask,
-        };
-
-        self.rows.push(new_row);
-
-        // If matrix length exceeds max_rows x, pop the oldest row
-        if self.rows.len() > self.max_rows {
-            self._popFromMatrix();
+        let idx = self.head % self.max_rows;
+        self.buffer[idx] = MatrixRow { action, reward, mask };
+        self.head += 1;
+        if self.len < self.max_rows {
+            self.len += 1;
         }
     }
 
@@ -124,60 +127,40 @@ impl EnvironmentMatrix {
         self.pushRowToMatrix(action, reward, mask);
     }
 
-    /// 1c. _popFromMatrix (Private): Removes the oldest (x+1) row from the matrix.
-    /// Called internally by `pushRowToMatrix`.
-    fn _popFromMatrix(&mut self) {
-        if !self.rows.is_empty() {
-            self.rows.remove(0);
-        }
-    }
-
-    /// Idiomatic snake_case helper calling `_popFromMatrix`.
-    #[allow(dead_code)]
-    fn pop_from_matrix(&mut self) {
-        self._popFromMatrix();
-    }
-
     /// 1d. _accessPolicy (Private): Defines access permissions for each NodeType.
     /// Returns the NodeAccessRule governing read access for the given node.
     fn _accessPolicy(&self, node_type: NodeType) -> NodeAccessRule {
         match node_type {
-            // FailureEngine requires safety mask and latest reward to check anomaly triggers
             NodeType::FailureEngine => NodeAccessRule {
                 can_read_action: true,
                 can_read_reward: true,
                 can_read_mask: true,
                 max_readable_rows: self.max_rows,
             },
-            // FastDecision (SAC) reads action history and reward
             NodeType::FastDecision => NodeAccessRule {
                 can_read_action: true,
                 can_read_reward: true,
                 can_read_mask: false,
                 max_readable_rows: self.max_rows,
             },
-            // LongVision (IQN) reads long reward & action trajectory for tail risk evaluation
             NodeType::LongVision => NodeAccessRule {
                 can_read_action: true,
                 can_read_reward: true,
                 can_read_mask: false,
                 max_readable_rows: self.max_rows,
             },
-            // Explorer (TD3+z) reads action history for skill drift compensation
             NodeType::Explorer => NodeAccessRule {
                 can_read_action: true,
                 can_read_reward: false,
                 can_read_mask: false,
                 max_readable_rows: self.max_rows,
             },
-            // GuardRail (CPO) reads hardware safety mask and recent action
             NodeType::GuardRail => NodeAccessRule {
                 can_read_action: true,
                 can_read_reward: false,
                 can_read_mask: true,
-                max_readable_rows: 5, // Limited window for slew rate checks
+                max_readable_rows: 5,
             },
-            // Protocol ingestion node full system access
             NodeType::ShivaProtocol => NodeAccessRule {
                 can_read_action: true,
                 can_read_reward: true,
@@ -189,23 +172,25 @@ impl EnvironmentMatrix {
 
     /// 1e. readMatrix (Public): Takes node_type input, uses `_accessPolicy` to verify access,
     /// and returns the permitted rows filtered according to node permissions.
+    /// NOTE: Allocates a new Vec. For hot-path, use `read_matrix_into`.
     pub fn readMatrix(&self, node_type: NodeType) -> Result<Vec<MatrixRow>, MatrixAccessError> {
         let policy = self._accessPolicy(node_type);
-
-        // Fetch up to max_readable_rows from the end of the sliding window
-        let start_idx = self.rows.len().saturating_sub(policy.max_readable_rows);
-        let allowed_slice = &self.rows[start_idx..];
-
-        // Filter columns according to policy permissions
-        let filtered_rows: Vec<MatrixRow> = allowed_slice
-            .iter()
-            .map(|row| MatrixRow {
+        let num_to_read = std::cmp::min(self.len, policy.max_readable_rows);
+        
+        let mut filtered_rows = Vec::with_capacity(num_to_read);
+        
+        for i in 0..num_to_read {
+            let logical_idx = self.len - num_to_read + i;
+            let actual_idx = (self.head + self.max_rows - self.len + logical_idx) % self.max_rows;
+            let row = &self.buffer[actual_idx];
+            
+            filtered_rows.push(MatrixRow {
                 action: if policy.can_read_action { row.action } else { [0.0; 32] },
                 reward: if policy.can_read_reward { row.reward } else { 0.0 },
                 mask: if policy.can_read_mask { row.mask } else { [0; 32] },
-            })
-            .collect();
-
+            });
+        }
+        
         Ok(filtered_rows)
     }
 
@@ -214,14 +199,35 @@ impl EnvironmentMatrix {
         self.readMatrix(node_type)
     }
 
+    /// Zero-allocation read alternative that writes directly into a provided slice.
+    /// Returns the number of rows written.
+    pub fn read_matrix_into(&self, node_type: NodeType, dest: &mut [MatrixRow]) -> Result<usize, MatrixAccessError> {
+        let policy = self._accessPolicy(node_type);
+        let num_to_read = std::cmp::min(self.len, std::cmp::min(policy.max_readable_rows, dest.len()));
+        
+        for i in 0..num_to_read {
+            let logical_idx = self.len - num_to_read + i;
+            let actual_idx = (self.head + self.max_rows - self.len + logical_idx) % self.max_rows;
+            let row = &self.buffer[actual_idx];
+            
+            dest[i] = MatrixRow {
+                action: if policy.can_read_action { row.action } else { [0.0; 32] },
+                reward: if policy.can_read_reward { row.reward } else { 0.0 },
+                mask: if policy.can_read_mask { row.mask } else { [0; 32] },
+            };
+        }
+        
+        Ok(num_to_read)
+    }
+
     /// Helper: returns the current number of rows stored in matrix.
     pub fn len(&self) -> usize {
-        self.rows.len()
+        self.len
     }
 
     /// Helper: checks if matrix is empty.
     pub fn is_empty(&self) -> bool {
-        self.rows.is_empty()
+        self.len == 0
     }
 }
 

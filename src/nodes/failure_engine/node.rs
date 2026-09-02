@@ -27,6 +27,8 @@
 // acts as the first line of defense.
 
 use crate::brain::core::traits::AnomalyDetector;
+use crate::framework::node::{Node, Phase, NodeOutcome};
+use crate::framework::error::ShivaError;
 use crate::nodes::core::shared_state::EnvironmentStack;
 
 /// FailureEngineNode — Phase 1 anomaly gate of the Mothership Ensemble.
@@ -80,6 +82,41 @@ impl FailureEngineNode {
         // The orchestrator will read this and short-circuit to emergency_action.
         if assessment.is_out_of_distribution {
             env.is_emergency = true;
+        }
+    }
+}
+
+/// Node trait implementation for FailureEngineNode.
+///
+/// WHAT: Makes FailureEngineNode a proper framework plugin.
+/// HOW: Wraps the existing execute() method with Node trait semantics.
+/// WHY: Enables registration in the framework's plugin system and
+///      provides structured error handling and pipeline flow control.
+impl Node for FailureEngineNode {
+    fn name(&self) -> &str {
+        "FailureEngine"
+    }
+
+    fn phase(&self) -> Phase {
+        Phase::AnomalyGate
+    }
+
+    fn execute(&self, env: &mut EnvironmentStack) -> Result<NodeOutcome, ShivaError> {
+        let assessment = self.detector.detect_anomaly(
+            &env.current_state,
+            &env.prev_action,
+        );
+
+        env.anomaly_output = assessment;
+
+        if assessment.is_out_of_distribution {
+            env.is_emergency = true;
+            env.emergency_reason = Some("Out-of-distribution state detected by Failure Engine (RND)");
+            Ok(NodeOutcome::ShortCircuit {
+                reason: "OOD state detected — dispatching emergency action",
+            })
+        } else {
+            Ok(NodeOutcome::Continue)
         }
     }
 }
