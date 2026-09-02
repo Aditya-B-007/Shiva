@@ -229,3 +229,16 @@ impl MothershipOrchestrator {
         env.final_action = env.constraint_output.projected_action;
     }
 }
+
+impl Default for MothershipOrchestrator {
+    fn default() -> Self {
+        Self::new(
+            FailureEngineNode::new(Box::new(crate::brain::anomaly::RndAnomalyAdapter::default())),
+            FastDecisionNode::new(Box::new(crate::brain::policy::SacPolicyAdapter::default())),
+            LongVisionNode::new(Box::new(crate::brain::risk::IqnRiskAdapter::default())),
+            ExplorerNode::new(Box::new(crate::brain::skill_vault::Td3SkillAdapter::default())),
+            GuardRailNode::new(Box::new(crate::brain::constraint::CpoConstraintAdapter::default())),
+        )
+    }
+}
+

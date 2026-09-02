@@ -46,7 +46,7 @@ impl ManInTheMiddle {
 
     /// Alias constructor matching requested naming convention.
     pub fn __init__() -> Self {
-        Self::new(None)
+        Self::new(Some(MothershipOrchestrator::default()))
     }
 
     /// Constructs a `ManInTheMiddle` protocol orchestrator with custom `ShivaConfig`.
@@ -55,7 +55,7 @@ impl ManInTheMiddle {
             matrix: EnvironmentMatrix::from_config(&config),
             actuator_signal: ActuatorSignal::from_config(&config),
             env_stack: EnvironmentStack::default(),
-            orchestrator: None,
+            orchestrator: Some(MothershipOrchestrator::default()),
             current_input: SystemInputDTO::default(),
         }
     }
