@@ -23,7 +23,7 @@
 
 Autonomous physical hardware—whether a **thrust-vectoring rocket engine**, a **quadruped robot**, an **autonomous drone**, or a **high-speed robotic manipulator**—demands control systems that fulfill three uncompromising requirements:
 
-1. **Sub-Millisecond Execution**: Control loops must evaluate in microseconds to maintain stability (e.g., kilohertz gimbal adjustments or motor torque commands).
+1. **Sub-Millisecond Execution**: Control loops must evaluate in microseconds to maintain stability (e.g., kilohertz gimbal adjustments or motor torque commands). Measured mean cycle latency is **`3.13 µs`** (P99: **`3.67 µs`**).
 2. **Zero Latency Spikes (Zero Heap Allocations)**: Dynamic memory allocation (`malloc`, garbage collection) creates unpredictable latency spikes that cause catastrophic physical failures (e.g., rocket RUD or mechanical crash).
 3. **Guaranteed Physical Safety Constraints**: Machine learning policies can hallucinate or output extreme actuator commands. Hardware demands hard interlocks, slew-rate limits, and convex boundary safety enforcement.
 
@@ -33,18 +33,82 @@ Autonomous physical hardware—whether a **thrust-vectoring rocket engine**, a *
 
 # Example Use Case
 
-
-
 https://github.com/user-attachments/assets/b06969f0-133d-4858-97a7-9d479e752aa8
 
-
-
 https://github.com/user-attachments/assets/0a3f43a1-c365-4a7b-9844-04c36231ebfe
-
 
 <img width="1536" height="1024" alt="Shiva Framework Control Loop" src="https://github.com/user-attachments/assets/ff651c7a-4d12-4bcd-9c0d-762ba982b992" />
 
 *From rocket gimbal stabilization & quadrotor landing to multi-joint robotic arm manipulation: Shiva ingests raw sensor telemetry, runs real-time anomaly detection, multi-policy consensus, and CPO safety projection to output deterministic motor commands.*
+
+---
+
+# 🧪 Real-Time Visual Testing & Simulation Harnesses
+
+Shiva includes complete, standalone visual testing and simulation harnesses equipped with **real-time 2D physics visualization**, **active Online Policy Gradient Learning**, and **interactive on-screen control bars**.
+
+Each test runs via a single command with zero complex setup.
+
+```
+test/
+├── test_inverted_pendulum.py   # Inverted Pendulum (Cart-Pole) Physics & Real-Time Visualizer
+└── test_atari_game.py          # Atari Space 2D Interception & Obstacle Avoidance Visualizer
+```
+
+### 1. Inverted Pendulum (Cart-Pole Balance Test)
+* **Physics Engine**: Full nonlinear cart-pole equations of motion integrated at $50\,\text{Hz}$ via Euler-Cromer physics.
+* **Control Objective**: Shiva continuously outputs continuous force commands ($F \in [-12\,\text{N}, +12\,\text{N}]$) to stabilize an inverted pendulum upright ($\theta \approx 0^\circ$) while centering the cart ($x \approx 0$).
+* **Online Policy Gradient Learning**: Trajectory rollouts $(s_t, a_t, r_t, \nabla_\theta \log\pi(a_t|s_t))$ are collected and updated at episode boundaries via policy gradient ascent ($\theta \leftarrow \theta + \alpha \sum_t \nabla_\theta \log\pi \cdot A_t$), allowing Shiva to actively adapt and extend balance duration from episode to episode.
+* **External Perturbation Testing**: Press **`[⚡ Push Cart]`** to deliver immediate impulse shocks ($\pm 10\,\text{N}$) to verify Shiva's disturbance rejection and balance recovery.
+
+```bash
+# Activate your virtual environment
+source ../.venv/bin/activate
+
+# Run Inverted Pendulum Visualizer (continuous mode)
+python3 test/test_inverted_pendulum.py
+
+# Or run for a fixed episode budget (e.g., 10 episodes)
+python3 test/test_inverted_pendulum.py --episodes 10
+```
+
+### 2. Atari Game (2D Space Interception & Hazard Avoidance)
+* **Game Dynamics**: 2D continuous space interception. Shiva commands $(a_x, a_y)$ continuous thrust vectors to navigate towards collectible green reward orbs ($+10\,\text{pts}$) while dodging red hazard spikes ($-15\,\text{pts}$, 3 lives).
+* **Sensor Rays**: Visual telemetry displays live tracking lines to target orbs and proximity warning lasers for nearby obstacles.
+* **Online Policy Gradient Learning**: Updates 2D navigation weights upon game-over or episode completion to maximize reward returns.
+
+```bash
+# Run Atari Game Visualizer (continuous mode)
+python3 test/test_atari_game.py
+
+# Or run for a fixed episode budget (e.g., 25 episodes)
+python3 test/test_atari_game.py -e 25
+```
+
+### 🎛️ Interactive On-Screen UI Controls
+
+Both test visualizers feature an on-screen top navigation bar:
+
+| UI Button | Shortcut | Description |
+| :--- | :---: | :--- |
+| **`[Mode: AI / Manual]`** | `Tab` | Switch between Shiva Autonomous 5-Node Control and Manual Keyboard control |
+| **`[Train: ON / OFF]`** | `T` | Toggle online policy gradient learning and weight updates on/off |
+| **`[Speed: 1x/2x/5x/MAX]`** | — | Accelerate simulation execution rate (real-time 60 FPS up to unlocked MAX) |
+| **`[Eps: ∞ / 3 / 5 / 10 / 25]`** | — | Dynamically cycle target episode limit during execution |
+| **`[⚡ Push Cart]`** | `P` | Apply an external impulse shock to test disturbance rejection (Inverted Pendulum) |
+| **`[Pause / Resume]`** | `Space` | Pause simulation to inspect state vectors, actions, and telemetry |
+| **`[Reset]`** | `R` | Reset simulation state and start a fresh episode |
+| **`[HUD: ON / OFF]`** | `H` | Toggle consensus telemetry and sensor debug overlays |
+
+### ⚡ Headless Benchmark Mode
+To run automated multi-episode benchmarks without opening a GUI window:
+```bash
+# Benchmark 50 episodes of Inverted Pendulum
+python3 test/test_inverted_pendulum.py --headless --episodes 50
+
+# Benchmark 50 episodes of Atari Game
+python3 test/test_atari_game.py --headless --episodes 50
+```
 
 ---
 
@@ -262,6 +326,9 @@ Shiva/
 │   ├── c_example.c             # C Integration Example
 │   ├── cpp_example.cpp         # C++ Integration Example
 │   └── python_example.py       # Python Integration Example
+├── test/                       # Real-Time Visual Test Harnesses
+│   ├── test_inverted_pendulum.py # Cart-Pole Balance & Online Learning Visualizer
+│   └── test_atari_game.py      # Atari 2D Space Interception & Online Learning Visualizer
 └── src/
     ├── lib.rs                  # Crate Root & Prelude Re-exports
     ├── config.rs               # Framework Configuration & ShivaBuilder
