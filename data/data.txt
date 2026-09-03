@@ -1,0 +1,1 @@
+This is the data for our SLM named Nandi. Nandi is a Small Language Model that aids in assisting users to use siva.ai for their control problem use cases.
