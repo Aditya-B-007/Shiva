@@ -17,19 +17,12 @@ class TransformerModel(nn.Module):
             dropout=dropout,
             activation='relu',
             norm_first=True,
-            batch_first=False  # Expected shape: [Sequence Length, Batch Size, Embedding Dim]
+            batch_first=False  
         )
         
-        # 3. Transformer Encoder Stack
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=nlayers)
-        
-        # 4. Output Decoder Linear Layer
         self.decoder = nn.Linear(ninp, ntoken)
-        
-        # 5. Persistent Mask Initialization
         self.src_mask = None
-
-        # 6. Apply Weight Initialization
         self._init_weights()
 
     def _init_weights(self):
@@ -44,13 +37,11 @@ class TransformerModel(nn.Module):
         return mask
 
     def forward(self, src):
-        # Generate or resize causal mask if sequence length changes
         if self.src_mask is None or self.src_mask.size(0) != len(src):
             device = src.device
             mask = self._generate_square_subsequent_mask(len(src)).to(device)
             self.src_mask = mask
 
-        # Embedding scaling by sqrt(d_model) prevents variance explosion
         src = self.encoder(src) * math.sqrt(self.ninp)
         src = self.pos_encoder(src)
         
@@ -76,21 +67,15 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
 
-# --- Verification & Parameter Count Script ---
 if __name__ == "__main__":
-    # Initialize the model with 300M scaling settings
     model = TransformerModel(ntoken=50257, ninp=1024, nhead=16, nhid=4096, nlayers=20)
-    
-    # Calculate parameter count
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
     print(f"Total Parameters:     {total_params:,}")
     print(f"Trainable Parameters: {trainable_params:,}")
     print(f"Target Parameter Fit: {total_params / 1_000_000:.2f} Million Parameters")
-    
-    # Quick sanity dummy forward pass
-    # Shape: [Sequence Length=32, Batch Size=4]
+
     dummy_input = torch.randint(0, 50257, (32, 4)) 
     dummy_output = model(dummy_input)
     print(f"Output shape successfully verified: {dummy_output.shape}")
