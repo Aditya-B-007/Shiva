@@ -7,13 +7,9 @@ class TransformerModel(nn.Module):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.ninp = ninp
-        
-        # 1. Embedding and Positional Encoding
         self.encoder = nn.Embedding(ntoken, ninp)
         self.pos_encoder = PositionalEncoding(ninp, dropout)
-        
-        # 2. Highly Optimized Native PyTorch Transformer Layer
-        # norm_first=True implements Pre-LN (better training stability for large models)
+
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=ninp, 
             nhead=nhead, 
