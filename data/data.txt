@@ -1,1 +1,1283 @@
-This is the data for our SLM named Nandi. Nandi is a Small Language Model that aids in assisting users to use siva.ai for their control problem use cases.
+Nandi is a Small Language Model that aids in assisting users to use siva.ai for their control problem use cases. It helps with your initial coding.
+
+**Shiva** is a high-performance, modular control-coupling framework written in Rust (featuring C, C++, and Python bindings) designed to bridge reinforcement learning (RL) algorithms with industrial or robotic plant control loops.
+
+### What Shiva Does
+
+Based on its architecture and module layout, Shiva functions as an intelligent middleware orchestrator that couples complex control policies to physical/simulated actuators:
+
+* **Policy & RL Execution Engine:** Implements algorithms such as Constrained Policy Optimization (`cpo.rs`), Twin Delayed DDPG (`td3.rs`), Soft Actor-Critic (`softActorCriticNetwork.rs`), Implicit Quantile Networks (`implicitQuantileNetworks.rs`), and Random Network Distillation (`rnd.rs`).
+* **Multi-Node Architecture:**
+* **Mothership / Orchestrator:** Oversees lifecycle states, node synchronization, and dispatching.
+* **Fast Decision Node:** Low-latency path delivering real-time control actions.
+* **Guardrail & Failure Engine:** Safety filtering, constraint handling, and anomaly detection (`brain/anomaly`, `brain/guardrail`) before commands hit hardware.
+* **Skill Vault & Long Vision:** Higher-level deliberate planning and modular behavior switching.
+
+
+* **Middleman Protocol & Adapters:** Decouples the low-level physical system (`actuator_adapter.rs`, `systemSide.rs`) from the learning/inference brain (`shivaSide.rs`, `middleMan.rs`), standardizing observation and actuation matrices.
+
+---
+
+### How Shiva Couples to Any Control Algorithm
+
+Shiva couples to arbitrary control algorithms through a **Sense $\rightarrow$ Guard $\rightarrow$ Actuate** pipeline via its `Adapter` and `MiddleMan` interfaces:
+
+1. **Environment State Ingestion:** The `SystemSide` protocol captures telemetry (encoder values, IMU, process variables) into an `EnvironmentMatrix`.
+2. **Adapter Transformation:** The `DefaultInput` / `ActuatorAdapter` maps external system dimensions into the tensor shapes expected by the internal `Brain` / algorithm.
+3. **Algorithm Evaluation:** The active control law (e.g., PID, MPC, or RL models like TD3/SAC) computes candidate control signals.
+4. **Safety Verification:** The candidate actions pass through `GuardrailNode` / `brain/constraint` to verify that actuator limits, rate limits, and safety invariants are respected.
+5. **Actuator Dispatch:** The filtered actions are packaged into `ActuatorSignal` and written back to the plant through the FFI or native Rust hardware driver.
+
+---
+
+### Control Coupling Implementations
+
+The coupling patterns across native Rust, Python, and C/C++ match the architecture shown in Shiva's examples and bindings.
+
+#### 1. Native Rust Control Coupling (`examples/basic_control_loop.rs`)
+
+```rust
+use std::time::{Duration, Instant};
+
+// Representation of the internal Shiva architecture modules
+pub struct EnvironmentMatrix {
+    pub observations: Vec<f64>,
+}
+
+pub struct ActuatorSignal {
+    pub commands: Vec<f64>,
+}
+
+pub trait ControlAlgorithm {
+    fn step(&mut self, state: &[f64]) -> Vec<f64>;
+}
+
+// Example: Classical Proportional-Integral-Derivative (PID) Controller
+pub struct PidController {
+    kp: f64,
+    ki: f64,
+    kd: f64,
+    setpoint: f64,
+    integral: f64,
+    last_error: f64,
+}
+
+impl PidController {
+    pub fn new(kp: f64, ki: f64, kd: f64, setpoint: f64) -> Self {
+        Self { kp, ki, kd, setpoint, integral: 0.0, last_error: 0.0 }
+    }
+}
+
+impl ControlAlgorithm for PidController {
+    fn step(&mut self, state: &[f64]) -> Vec<f64> {
+        let current_val = state[0];
+        let error = self.setpoint - current_val;
+        self.integral += error * 0.01;
+        let derivative = (error - self.last_error) / 0.01;
+        self.last_error = error;
+        
+        let output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative);
+        vec![output]
+    }
+}
+
+// Guardrail Filter for hard bounds
+pub struct SafetyGuardrail {
+    min_limit: f64,
+    max_limit: f64,
+}
+
+impl SafetyGuardrail {
+    pub fn filter(&self, raw_signal: Vec<f64>) -> ActuatorSignal {
+        let clamped: Vec<f64> = raw_signal
+            .into_iter()
+            .map(|val| val.clamp(self.min_limit, self.max_limit))
+            .collect();
+        ActuatorSignal { commands: clamped }
+    }
+}
+
+// Shiva Orchestrator Coupling Loop
+pub fn run_coupling_loop<C: ControlAlgorithm>(
+    mut controller: C,
+    guardrail: SafetyGuardrail,
+    duration: Duration,
+) {
+    let tick_rate = Duration::from_millis(10); // 100 Hz loop
+    let start_time = Instant::now();
+    let mut plant_state = vec![0.0]; // Mock state
+
+    while start_time.elapsed() < duration {
+        let loop_start = Instant::now();
+
+        // 1. Ingest via Environment Matrix
+        let env = EnvironmentMatrix { observations: plant_state.clone() };
+
+        // 2. Evaluate Control Algorithm
+        let raw_action = controller.step(&env.observations);
+
+        // 3. Pass through Shiva Safety Guardrails
+        let safe_signal = guardrail.filter(raw_action);
+
+        // 4. Actuation update (mock plant response)
+        plant_state[0] += safe_signal.commands[0] * 0.01;
+
+        // Maintain deterministic loop timing
+        if let Some(remaining) = tick_rate.checked_sub(loop_start.elapsed()) {
+            std::thread::sleep(remaining);
+        }
+    }
+}
+
+fn main() {
+    let controller = PidController::new(2.0, 0.1, 0.05, 10.0);
+    let guardrail = SafetyGuardrail { min_limit: -5.0, max_limit: 5.0 };
+    run_coupling_loop(controller, guardrail, Duration::from_secs(2));
+}
+
+```
+
+---
+
+#### 2. Python Binding Coupling (`bindings/python/shiva.py` / `python_example.py`)
+
+```python
+import numpy as np
+import time
+
+class ShivaControlCoupler:
+    """
+    Python wrapper matching Shiva's C-ABI / Python bindings.
+    Couples arbitrary external algorithms (PyTorch RL, NumPy MPC) to the Shiva core.
+    """
+    def __init__(self, action_dim: int, lower_bounds: np.ndarray, upper_bounds: np.ndarray):
+        self.action_dim = action_dim
+        self.lower_bounds = lower_bounds
+        self.upper_bounds = upper_bounds
+
+    def process_guardrails(self, raw_action: np.ndarray) -> np.ndarray:
+        # Enforces hard safety invariants and physical limits
+        return np.clip(raw_action, self.lower_bounds, self.upper_bounds)
+
+    def couple(self, algorithm_callback, get_plant_state, apply_actuation, frequency_hz: float = 100.0):
+        dt = 1.0 / frequency_hz
+        try:
+            while True:
+                t0 = time.perf_counter()
+
+                # Step 1: Read state from system
+                observation = get_plant_state()
+
+                # Step 2: Compute control action using supplied algorithm
+                raw_action = algorithm_callback(observation)
+
+                # Step 3: Enforce Shiva Guardrails / Anomaly Check
+                safe_action = self.process_guardrails(np.asarray(raw_action, dtype=np.float64))
+
+                # Step 4: Dispatch to plant
+                apply_actuation(safe_action)
+
+                # Step 5: Enforce loop rate
+                elapsed = time.perf_counter() - t0
+                if elapsed < dt:
+                    time.sleep(dt - elapsed)
+        except KeyboardInterrupt:
+            pass
+
+# Example usage: Coupling a custom policy
+if __name__ == "__main__":
+    coupler = ShivaControlCoupler(
+        action_dim=1,
+        lower_bounds=np.array([-1.0]),
+        upper_bounds=np.array([1.0])
+    )
+
+    # Replace with any control policy (e.g. TD3, SAC, LQR, or MPC)
+    def policy_fn(state: np.ndarray) -> np.ndarray:
+        target = 0.0
+        return 0.5 * (target - state)
+
+    mock_state = np.array([2.5])
+
+    def get_state():
+        return mock_state
+
+    def send_actuation(action):
+        global mock_state
+        mock_state += action * 0.05
+        print(f"State: {mock_state[0]:.3f} | Action Applied: {action[0]:.3f}")
+
+    # Run for demonstration
+    coupler.couple(policy_fn, get_state, send_actuation, frequency_hz=10)
+
+```
+
+---
+
+#### 3. C / C++ Adapter Coupling (`bindings/c/shiva.h` / `c_example.c`)
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+
+#define MAX_CHANNELS 8
+
+typedef struct {
+    double data[MAX_CHANNELS];
+    size_t length;
+} ShivaState;
+
+typedef struct {
+    double commands[MAX_CHANNELS];
+    size_t length;
+} ShivaAction;
+
+/* Shiva Guardrail clamp hook */
+ShivaAction shiva_filter_action(const ShivaAction* raw, double min_val, double max_val) {
+    ShivaAction filtered;
+    filtered.length = raw->length;
+    for (size_t i = 0; i < raw->length; ++i) {
+        double val = raw->commands[i];
+        if (val < min_val) val = min_val;
+        if (val > max_val) val = max_val;
+        filtered.commands[i] = val;
+    }
+    return filtered;
+}
+
+/* Control Coupling function pointer */
+typedef ShivaAction (*ControlAlgorithmFn)(const ShivaState* state, void* user_ctx);
+
+void shiva_control_loop_step(
+    ControlAlgorithmFn algorithm,
+    void* user_ctx,
+    const ShivaState* current_state,
+    double min_bound,
+    double max_bound,
+    ShivaAction* output_action
+) {
+    // 1. Query control algorithm
+    ShivaAction raw = algorithm(current_state, user_ctx);
+
+    // 2. Apply Shiva internal guardrails
+    *output_action = shiva_filter_action(&raw, min_bound, max_bound);
+}
+
+```
+Here are deeper implementations and architectural extensions for Shiva, covering multi-variable system coupling (MIMO), continuous state-space MPC (Model Predictive Control) integration, and asynchronous real-time threading patterns.
+
+---
+
+### Multi-Input Multi-Output (MIMO) Coupler with Asynchronous Middleman (Python)
+
+When controlling complex multi-degree-of-freedom systems (e.g., robotic arms, quadrupeds), state and action dimensions scale up. The pipeline decouples communication via an asynchronous ring buffer to keep network I/O from stalling control loops.
+
+```python
+import numpy as np
+import time
+import threading
+from typing import Callable, Tuple
+
+class AsyncShivaMiddleman:
+    """
+    Asynchronous Middleman coordinating high-frequency sensor ingestion
+    with decoupled policy inference and low-level safety enforcement.
+    """
+    def __init__(
+        self,
+        state_dim: int,
+        action_dim: int,
+        lower_action_bounds: np.ndarray,
+        upper_action_bounds: np.ndarray,
+        max_rate_of_change: np.ndarray,
+    ):
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.lower_bounds = np.asarray(lower_action_bounds, dtype=np.float64)
+        self.upper_bounds = np.asarray(upper_action_bounds, dtype=np.float64)
+        self.max_slew_rate = np.asarray(max_rate_of_change, dtype=np.float64)
+
+        # Thread-safe buffer
+        self._lock = threading.Lock()
+        self._latest_state = np.zeros(state_dim, dtype=np.float64)
+        self._latest_safe_action = np.zeros(action_dim, dtype=np.float64)
+        self._last_applied_action = np.zeros(action_dim, dtype=np.float64)
+        self._running = False
+
+    def update_telemetry(self, state: np.ndarray) -> None:
+        """Called by the plant sensor ingest thread."""
+        with self._lock:
+            self._latest_state = np.copy(state)
+
+    def get_latest_action(self) -> np.ndarray:
+        """Called by the physical actuator output interface."""
+        with self._lock:
+            return np.copy(self._latest_safe_action)
+
+    def _apply_guardrails(self, target_action: np.ndarray, dt: float) -> np.ndarray:
+        """
+        Enforces both positional bounding box constraints and
+        slew rate (derivative) saturation limits.
+        """
+        # 1. Slew rate saturation: |u_k - u_{k-1}| / dt <= max_slew
+        delta_u = target_action - self._last_applied_action
+        max_delta = self.max_slew_rate * dt
+        clamped_delta = np.clip(delta_u, -max_delta, max_delta)
+        slew_limited_action = self._last_applied_action + clamped_delta
+
+        # 2. Hard absolute bounds
+        bounded_action = np.clip(slew_limited_action, self.lower_bounds, self.upper_bounds)
+        self._last_applied_action = np.copy(bounded_action)
+        return bounded_action
+
+    def start_inference_worker(
+        self,
+        policy_fn: Callable[[np.ndarray], np.ndarray],
+        frequency_hz: float = 100.0,
+    ) -> threading.Thread:
+        """Runs the control evaluation loop on a dedicated thread."""
+        self._running = True
+        dt = 1.0 / frequency_hz
+
+        def _worker_loop():
+            last_time = time.perf_counter()
+            while self._running:
+                now = time.perf_counter()
+                elapsed = now - last_time
+
+                if elapsed >= dt:
+                    # Fetch observation
+                    with self._lock:
+                        obs = np.copy(self._latest_state)
+
+                    # Compute action via policy
+                    raw_action = policy_fn(obs)
+
+                    # Pass through guardrail constraints
+                    safe_action = self._apply_guardrails(np.asarray(raw_action, dtype=np.float64), elapsed)
+
+                    # Update dispatch buffer
+                    with self._lock:
+                        self._latest_safe_action = safe_action
+
+                    last_time = now
+                else:
+                    time.sleep(max(0.0, (dt - elapsed) / 2.0))
+
+        thread = threading.Thread(target=_worker_loop, daemon=True)
+        thread.start()
+        return thread
+
+    def stop(self) -> None:
+        self._running = False
+
+```
+
+---
+
+### Native Rust: Model Predictive Control (MPC) / State-Space Coupling
+
+Below is an end-to-end discrete-time linear-quadratic control loop coupled directly to Shiva's environment abstraction using linear state-space matrices ($x_{k+1} = Ax_k + Bu_k$):
+
+```rust
+use std::time::{Duration, Instant};
+
+/// Generic State-Space Matrix Representation for MIMO plants
+pub struct StateSpacePlant {
+    pub a_matrix: Vec<Vec<f64>>, // n x n
+    pub b_matrix: Vec<Vec<f64>>, // n x m
+    pub state: Vec<f64>,         // n
+}
+
+impl StateSpacePlant {
+    pub fn new(a: Vec<Vec<f64>>, b: Vec<Vec<f64>>, initial_state: Vec<f64>) -> Self {
+        Self { a_matrix: a, b_matrix: b, state: initial_state }
+    }
+
+    pub fn step(&mut self, control_inputs: &[f64]) -> Vec<f64> {
+        let n = self.state.len();
+        let m = control_inputs.len();
+        let mut next_state = vec![0.0; n];
+
+        // x_{k+1} = A * x_k + B * u_k
+        for i in 0..n {
+            let mut ax = 0.0;
+            for j in 0..n {
+                ax += self.a_matrix[i][j] * self.state[j];
+            }
+            let mut bu = 0.0;
+            for k in 0..m {
+                bu += self.b_matrix[i][k] * control_inputs[k];
+            }
+            next_state[i] = ax + bu;
+        }
+
+        self.state = next_state;
+        self.state.clone()
+    }
+}
+
+/// Dynamic Gain State-Feedback Controller (u = -K * x)
+pub struct StateFeedbackController {
+    pub gain_matrix_k: Vec<Vec<f64>>, // m x n
+    pub setpoint: Vec<f64>,           // n
+}
+
+impl StateFeedbackController {
+    pub fn compute_action(&self, current_state: &[f64]) -> Vec<f64> {
+        let m = self.gain_matrix_k.len();
+        let n = current_state.len();
+        let mut u = vec![0.0; m];
+
+        for i in 0..m {
+            let mut feedback = 0.0;
+            for j in 0..n {
+                let error = current_state[j] - self.setpoint[j];
+                feedback += self.gain_matrix_k[i][j] * error;
+            }
+            u[i] = -feedback;
+        }
+        u
+    }
+}
+
+/// Shiva Multi-Channel Safety Guardrail with Energy Threshold Monitoring
+pub struct MultiChannelGuardrail {
+    pub min_limits: Vec<f64>,
+    pub max_limits: Vec<f64>,
+    pub max_allowable_state_norm: f64,
+}
+
+impl MultiChannelGuardrail {
+    pub fn sanitize(
+        &self,
+        raw_action: Vec<f64>,
+        current_state: &[f64],
+    ) -> Result<Vec<f64>, &'static str> {
+        // Anomaly / Divergence Check (Lyapunov Stability Monitoring)
+        let state_energy: f64 = current_state.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if state_energy > self.max_allowable_state_norm {
+            return Err("Emergency Stop: State space vector exceeded safety envelope.");
+        }
+
+        // Channel-wise hard saturation
+        let clamped: Vec<f64> = raw_action
+            .into_iter()
+            .enumerate()
+            .map(|(idx, val)| {
+                let min = self.min_limits[idx];
+                let max = self.max_limits[idx];
+                val.clamp(min, max)
+            })
+            .collect();
+
+        Ok(clamped)
+    }
+}
+
+// Orchestrator Execution
+pub fn run_state_space_orchestration() {
+    // 2-State (e.g. angle, angular velocity), 1-Actuator (torque)
+    let a = vec![
+        vec![1.0, 0.01],
+        vec![0.0, 0.99],
+    ];
+    let b = vec![
+        vec![0.0],
+        vec![0.05],
+    ];
+    let mut plant = StateSpacePlant::new(a, b, vec![1.5, 0.0]); // Displaced initial state
+
+    let controller = StateFeedbackController {
+        gain_matrix_k: vec![vec![12.0, 2.5]],
+        setpoint: vec![0.0, 0.0],
+    };
+
+    let guardrail = MultiChannelGuardrail {
+        min_limits: vec![-3.0],
+        max_limits: vec![3.0],
+        max_allowable_state_norm: 10.0,
+    };
+
+    let loop_dt = Duration::from_millis(10);
+    for step in 0..100 {
+        let t0 = Instant::now();
+
+        // 1. Ingest State
+        let current_state = plant.state.clone();
+
+        // 2. Compute Raw Policy
+        let raw_action = controller.compute_action(&current_state);
+
+        // 3. Guardrail / Fault-Tolerance Filter
+        let safe_action = match guardrail.sanitize(raw_action, &current_state) {
+            Ok(act) => act,
+            Err(msg) => {
+                eprintln!("Step {}: {}", step, msg);
+                vec![0.0] // Safe default / zero actuation
+            }
+        };
+
+        // 4. Actuate Plant
+        let updated_state = plant.step(&safe_action);
+
+        if step % 20 == 0 {
+            println!(
+                "Step {:03} | State: [{:.3}, {:.3}] | Command: {:.3}",
+                step, updated_state[0], updated_state[1], safe_action[0]
+            );
+        }
+
+        if let Some(delay) = loop_dt.checked_sub(t0.elapsed()) {
+            std::thread::sleep(delay);
+        }
+    }
+}
+
+```
+
+---
+
+### Low-Level C-ABI Cross-Language Header (`shiva_mimo.h`)
+
+For integration into embedded RTOS controllers (such as FreeRTOS, Zephyr) or bare-metal setups:
+
+```c
+#ifndef SHIVA_MIMO_H
+#define SHIVA_MIMO_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+    double* data;
+    size_t dimension;
+    uint64_t timestamp_ns;
+} ShivaTelemetryVector;
+
+typedef struct {
+    double* data;
+    size_t dimension;
+    bool is_emergency_stop;
+} ShivaActuatorVector;
+
+typedef struct {
+    double* lower_bounds;
+    double* upper_bounds;
+    double* max_derivatives;
+    size_t dimension;
+} ShivaBoundsConfig;
+
+/**
+ * Filter raw control commands in-place according to hard limit bounds and derivative slew.
+ */
+bool shiva_apply_mimo_guardrails(
+    const ShivaBoundsConfig* config,
+    const double* last_action,
+    double* candidate_action,
+    double dt
+);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SHIVA_MIMO_H */
+
+```
+
+To expand on the core coupling loops, the following implementations demonstrate the remaining major architectural components of Shiva: **cross-thread lock-free state sharing**, **neural policy inference (SAC/TD3) through the Brain traits**, **dynamic fallback switching via the Failure Engine**, and **FFI C-ABI wrapper layers**.
+
+---
+
+### 1. Lock-Free Multi-Node Shared State (`src/nodes/core/shared_state.rs`)
+
+Shiva's `Mothership` orchestrates asynchronous communication between the `FastDecisionNode`, `LongVisionNode`, and `GuardrailNode` using atomic cache-padded or double-buffered snapshots so low-level control loops never block on long-term inference:
+
+```rust
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
+pub const MAX_OBS_DIM: usize = 32;
+pub const MAX_ACT_DIM: usize = 8;
+
+/// Double-buffered, lock-free state snapshot used across Shiva nodes
+pub struct ShivaSharedBuffer {
+    // 0 or 1 index indicating active read buffer
+    read_index: AtomicUsize,
+    buffers: [ShivaStateSnapshot; 2],
+}
+
+#[derive(Clone, Copy)]
+pub struct ShivaStateSnapshot {
+    pub observation: [f64; MAX_OBS_DIM],
+    pub obs_len: usize,
+    pub safe_action: [f64; MAX_ACT_DIM],
+    pub act_len: usize,
+    pub timestamp_us: u64,
+    pub emergency_halt: bool,
+}
+
+impl Default for ShivaStateSnapshot {
+    fn default() -> Self {
+        Self {
+            observation: [0.0; MAX_OBS_DIM],
+            obs_len: 0,
+            safe_action: [0.0; MAX_ACT_DIM],
+            act_len: 0,
+            timestamp_us: 0,
+            emergency_halt: false,
+        }
+    }
+}
+
+impl ShivaSharedBuffer {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            read_index: AtomicUsize::new(0),
+            buffers: [ShivaStateSnapshot::default(), ShivaStateSnapshot::default()],
+        })
+    }
+
+    /// Read side (Fast Decision / Actuator Output Node)
+    pub fn read_latest(&self) -> ShivaStateSnapshot {
+        let idx = self.read_index.load(Ordering::Acquire);
+        self.buffers[idx]
+    }
+
+    /// Write side (Middleman / Ingestion Node)
+    /// Safety: Only one designated writer thread updates the non-active slot.
+    pub unsafe fn write_snapshot(&mut self, new_snapshot: ShivaStateSnapshot) {
+        let current_read = self.read_index.load(Ordering::Relaxed);
+        let write_slot = 1 - current_read;
+
+        self.buffers[write_slot] = new_snapshot;
+        // Flip active slot atomically
+        self.read_index.store(write_slot, Ordering::Release);
+    }
+}
+
+```
+
+---
+
+### 2. Reinforcement Learning Brain Coupling (`src/brain/core/traits.rs` & `src/algorithms/`)
+
+Shiva interfaces continuous actor-critic algorithms (like Soft Actor-Critic or Twin Delayed DDPG) with physical systems by abstracting the policy network as an evaluatable brain policy with deterministic and stochastic execution modes:
+
+```rust
+pub trait ShivaPolicyBrain: Send + Sync {
+    /// Evaluates current observations and computes raw continuous action vectors
+    fn forward(&self, observation: &[f64], deterministic: bool) -> Vec<f64>;
+    
+    /// Returns the input (observation) and output (action) dimensions
+    fn dimensions(&self) -> (usize, usize);
+}
+
+/// Linear/MLP continuous policy network coupling (e.g., actor head of SAC or TD3)
+pub struct ContinuousActorPolicy {
+    pub weights_layer1: Vec<Vec<f64>>, // [hidden_dim, obs_dim]
+    pub bias_layer1: Vec<f64>,
+    pub weights_out: Vec<Vec<f64>>,    // [act_dim, hidden_dim]
+    pub bias_out: Vec<f64>,
+}
+
+impl ContinuousActorPolicy {
+    fn relu(x: f64) -> f64 {
+        if x > 0.0 { x } else { 0.0 }
+    }
+
+    fn tanh(x: f64) -> f64 {
+        x.tanh()
+    }
+}
+
+impl ShivaPolicyBrain for ContinuousActorPolicy {
+    fn dimensions(&self) -> (usize, usize) {
+        let obs_dim = self.weights_layer1[0].len();
+        let act_dim = self.weights_out.len();
+        (obs_dim, act_dim)
+    }
+
+    fn forward(&self, observation: &[f64], _deterministic: bool) -> Vec<f64> {
+        let hidden_dim = self.bias_layer1.len();
+        let act_dim = self.bias_out.len();
+        let mut hidden = vec![0.0; hidden_dim];
+
+        // First dense layer + ReLU
+        for h in 0..hidden_dim {
+            let mut dot = self.bias_layer1[h];
+            for (i, &obs) in observation.iter().enumerate() {
+                dot += self.weights_layer1[h][i] * obs;
+            }
+            hidden[h] = Self::relu(dot);
+        }
+
+        // Output dense layer + Tanh saturation (Action bounds: [-1.0, 1.0])
+        let mut action = vec![0.0; act_dim];
+        for a in 0..act_dim {
+            let mut dot = self.bias_out[a];
+            for h in 0..hidden_dim {
+                dot += self.weights_out[a][h] * hidden[h];
+            }
+            action[a] = Self::tanh(dot);
+        }
+
+        action
+    }
+}
+
+```
+
+---
+
+### 3. Failure Engine & Fault-Tolerant Switching (`src/nodes/failure_engine/node.rs`)
+
+When physical sensors drop or an RL algorithm produces divergence/nans, Shiva's `FailureEngine` intercepts the output and hands control over to a deterministic fallback law (e.g., standard PD or zero-torque damper):
+
+```rust
+pub enum ControllerHealth {
+    Nominal,
+    AnomalyDetected(&'static str),
+    DegradedSensor,
+    CriticalFailure,
+}
+
+pub struct ShivaFailureEngine<P, F>
+where
+    P: ShivaPolicyBrain,
+    F: Fn(&[f64]) -> Vec<f64> + Send + Sync,
+{
+    primary_brain: P,
+    deterministic_fallback: F,
+    consecutive_anomalies: usize,
+    max_tolerance: usize,
+}
+
+impl<P, F> ShivaFailureEngine<P, F>
+where
+    P: ShivaPolicyBrain,
+    F: Fn(&[f64]) -> Vec<f64> + Send + Sync,
+{
+    pub fn new(primary: P, fallback: F, max_tolerance: usize) -> Self {
+        Self {
+            primary_brain: primary,
+            deterministic_fallback: fallback,
+            consecutive_anomalies: 0,
+            max_tolerance,
+        }
+    }
+
+    pub fn execute_fault_tolerant_step(&mut self, state: &[f64]) -> (Vec<f64>, ControllerHealth) {
+        // 1. Telemetry sanity check
+        let is_state_corrupt = state.iter().any(|&x| x.is_nan() || x.is_infinite());
+        if is_state_corrupt {
+            let fallback_action = (self.deterministic_fallback)(state);
+            return (fallback_action, ControllerHealth::DegradedSensor);
+        }
+
+        // 2. Primary Brain inference
+        let candidate_action = self.primary_brain.forward(state, true);
+
+        // 3. Action anomaly check (e.g., NaN outputs from network weights)
+        let is_action_corrupt = candidate_action.iter().any(|&u| u.is_nan() || u.is_infinite());
+
+        if is_action_corrupt {
+            self.consecutive_anomalies += 1;
+            let fallback_action = (self.deterministic_fallback)(state);
+
+            if self.consecutive_anomalies >= self.max_tolerance {
+                (fallback_action, ControllerHealth::CriticalFailure)
+            } else {
+                (fallback_action, ControllerHealth::AnomalyDetected("Corrupted action vector from neural core"))
+            }
+        } else {
+            self.consecutive_anomalies = 0;
+            (candidate_action, ControllerHealth::Nominal)
+        }
+    }
+}
+
+```
+
+---
+
+### 4. Complete FFI Bridge Pipeline (`src/ffi.rs` to C++)
+
+This demonstrates the full C++ adapter wrapping Shiva's native C exports, mapping an external physical simulation step to Shiva's pipeline.
+
+**Shiva C-ABI Layer (`shiva_c_api.rs` / `src/ffi.rs`):**
+
+```rust
+#[repr(C)]
+pub struct CShivaContext {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct CObservation {
+    pub data: *const f64,
+    pub length: usize,
+}
+
+#[repr(C)]
+pub struct CAction {
+    pub data: *mut f64,
+    pub length: usize,
+    pub status_code: i32, // 0 = OK, -1 = Safety Clamp Active, -2 = Emergency Stop
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn shiva_context_create() -> *mut CShivaContext {
+    let boxed = Box::new(vec![0.0f64; 16]);
+    Box::into_raw(boxed) as *mut CShivaContext
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn shiva_step_pipeline(
+    _ctx: *mut CShivaContext,
+    obs: CObservation,
+    act: *mut CAction,
+    limit: f64,
+) -> i32 {
+    if obs.data.is_null() || act.is_null() || (*act).data.is_null() {
+        return -3; // Invalid pointer
+    }
+
+    let input_slice = std::slice::from_raw_parts(obs.data, obs.length);
+    let out_slice = std::slice::from_raw_parts_mut((*act).data, (*act).length);
+
+    let mut safety_tripped = false;
+
+    // Execute mock inner-control pipeline & safety guardrails
+    for i in 0..out_slice.len() {
+        let nominal_val = if i < input_slice.len() { -input_slice[i] * 1.5 } else { 0.0 };
+        
+        if nominal_val.abs() > limit {
+            out_slice[i] = nominal_val.clamp(-limit, limit);
+            safety_tripped = true;
+        } else {
+            out_slice[i] = nominal_val;
+        }
+    }
+
+    (*act).status_code = if safety_tripped { -1 } else { 0 };
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn shiva_context_destroy(ctx: *mut CShivaContext) {
+    if !ctx.is_null() {
+        let _ = Box::from_raw(ctx as *mut Vec<f64>);
+    }
+}
+
+```
+
+**C++ Consumer Wrapper (`bindings/cpp/shiva.hpp` & Application):**
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <stdexcept>
+
+// Mirror C FFI structs
+extern "C" {
+    struct CShivaContext;
+    struct CObservation {
+        const double* data;
+        size_t length;
+    };
+    struct CAction {
+        double* data;
+        size_t length;
+        int status_code;
+    };
+
+    CShivaContext* shiva_context_create();
+    int shiva_step_pipeline(CShivaContext* ctx, CObservation obs, CAction* act, double limit);
+    void shiva_context_destroy(CShivaContext* ctx);
+}
+
+class ShivaCouplerBridge {
+public:
+    explicit ShivaCouplerBridge(double hard_limit) 
+        : limit_(hard_limit), ctx_(shiva_context_create(), shiva_context_destroy) {
+        if (!ctx_) {
+            throw std::runtime_error("Failed to allocate native Shiva context");
+        }
+    }
+
+    std::vector<double> evaluate(const std::vector<double>& telemetry, size_t action_channels, int& out_status) {
+        std::vector<double> commands(action_channels, 0.0);
+        
+        CObservation obs{ telemetry.data(), telemetry.size() };
+        CAction act{ commands.data(), commands.size(), 0 };
+
+        int res = shiva_step_pipeline(ctx_.get(), obs, &act, limit_);
+        if (res != 0) {
+            throw std::runtime_error("Pipeline execution error in Shiva FFI");
+        }
+
+        out_status = act.status_code;
+        return commands;
+    }
+
+private:
+    double limit_;
+    std::unique_ptr<CShivaContext, decltype(&shiva_context_destroy)> ctx_;
+};
+
+int main() {
+    ShivaCouplerBridge coupler(2.5); // Hard bound: [-2.5, 2.5]
+    std::vector<double> plant_telemetry = { 1.2, -0.4, 3.1 };
+
+    int status = 0;
+    auto control_commands = coupler.evaluate(plant_telemetry, 3, status);
+
+    std::cout << "Shiva Status Code: " << status << " (0: OK, -1: Clamped)" << std::endl;
+    for (size_t i = 0; i < control_commands.size(); ++i) {
+        std::cout << "Actuator [" << i << "]: " << control_commands[i] << std::endl;
+    }
+
+    return 0;
+}
+
+```
+Deploying the Shiva engine into a production, edge, or hardware-in-the-loop (HIL) environment requires containerizing the Rust runtime, exposing real-time configuration hooks, orchestrating the system side and Shiva side nodes, and exposing reliable observation/action telemetry endpoints.
+
+---
+
+### Deployment Architecture Overview
+
+A production Shiva deployment operates across three main layers:
+
+* **Container / Process Layer:** A lightweight container running the compiled native binary (`shiva-runtime`) configured for POSIX real-time scheduling (`SCHED_FIFO`) to minimize thread preemption jitter.
+* **Middleman Telemetry Bus:** An IPC bridge (e.g., zero-copy shared memory or high-throughput Unix Domain Sockets/WebSocket streams) connecting physical plant sensors to the `SystemSide` adapter.
+* **Orchestrator Lifecycle Management:** Declarative configuration defining algorithm hyperparameters, safety bounds, fallback rules, and node topologies.
+
+---
+
+### 1. Production Configuration (`shiva_config.json`)
+
+This configuration dictates safety limits, fallback behaviors, and the active algorithm pipeline across the orchestrator nodes:
+
+```json
+{
+  "system": {
+    "target_tick_rate_hz": 100.0,
+    "realtime_priority": 80,
+    "log_level": "info"
+  },
+  "nodes": {
+    "mothership": {
+      "auto_restart_on_failure": true,
+      "max_consecutive_anomalies": 3
+    },
+    "guardrail": {
+      "action_dimension": 2,
+      "lower_bounds": [-5.0, -10.0],
+      "upper_bounds": [5.0, 10.0],
+      "max_slew_rates": [20.0, 40.0],
+      "lyapunov_energy_limit": 50.0
+    },
+    "brain": {
+      "algorithm": "TD3",
+      "deterministic_eval": true,
+      "model_path": "/opt/shiva/models/actor_weights.bin"
+    },
+    "failure_engine": {
+      "fallback_strategy": "ZeroDamping",
+      "sensor_timeout_ms": 25
+    }
+  }
+}
+
+```
+
+---
+
+### 2. Standalone Deployment Runtime (`src/main.rs`)
+
+This entry point initializes the nodes, attaches signal handlers, sets thread priorities, and executes the orchestrator pipeline:
+
+```rust
+use std::fs::File;
+use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+// Configuration data structures
+#[derive(serde::Deserialize, Clone)]
+struct GuardrailSettings {
+    lower_bounds: Vec<f64>,
+    upper_bounds: Vec<f64>,
+    max_slew_rates: Vec<f64>,
+}
+
+#[derive(serde::Deserialize, Clone)]
+struct ShivaDeploymentConfig {
+    system_frequency_hz: f64,
+    guardrail: GuardrailSettings,
+}
+
+// Runtime deployment manager
+pub struct ShivaRuntimeSupervisor {
+    config: ShivaDeploymentConfig,
+    is_running: Arc<AtomicBool>,
+}
+
+impl ShivaRuntimeSupervisor {
+    pub fn new(config: ShivaDeploymentConfig, is_running: Arc<AtomicBool>) -> Self {
+        Self { config, is_running }
+    }
+
+    pub fn run_deployment_loop(&self) {
+        let period = Duration::from_secs_f64(1.0 / self.config.system_frequency_hz);
+        println!("[SHIVA] Runtime deployed at {:.1} Hz", self.config.system_frequency_hz);
+
+        let mut last_action = vec![0.0; self.config.guardrail.lower_bounds.len()];
+        let mut tick: u64 = 0;
+
+        while self.is_running.load(Ordering::Relaxed) {
+            let start_instant = Instant::now();
+
+            // 1. Ingest telemetry from physical environment
+            let raw_observation = self.read_plant_telemetry();
+
+            // 2. Evaluate brain decision pipeline
+            let raw_action = self.evaluate_brain(&raw_observation);
+
+            // 3. Apply Shiva Guardrail filter
+            let safe_action = self.enforce_guardrails(&raw_action, &last_action, period.as_secs_f64());
+            last_action = safe_action.clone();
+
+            // 4. Dispatch to physical actuators
+            self.write_actuators(&safe_action);
+
+            tick += 1;
+            if tick % 100 == 0 {
+                println!("[SHIVA-HEARTBEAT] Tick: {} | Action: {:?}", tick, safe_action);
+            }
+
+            // Real-time sleep compensation
+            if let Some(remaining) = period.checked_sub(start_instant.elapsed()) {
+                std::thread::sleep(remaining);
+            }
+        }
+
+        println!("[SHIVA] Shutdown sequence executed. Plant set to safe state.");
+    }
+
+    fn read_plant_telemetry(&self) -> Vec<f64> {
+        // Reads from hardware bus (e.g., EtherCAT, CAN, or shared memory)
+        vec![0.12, -0.05]
+    }
+
+    fn evaluate_brain(&self, _obs: &[f64]) -> Vec<f64> {
+        // Policy / Controller output
+        vec![1.5, -2.0]
+    }
+
+    fn enforce_guardrails(&self, target: &[f64], previous: &[f64], dt: f64) -> Vec<f64> {
+        target
+            .iter()
+            .zip(previous.iter())
+            .enumerate()
+            .map(|(idx, (&u_target, &u_prev))| {
+                let max_delta = self.config.guardrail.max_slew_rates[idx] * dt;
+                let delta = (u_target - u_prev).clamp(-max_delta, max_delta);
+                let slew_limited = u_prev + delta;
+                slew_limited.clamp(
+                    self.config.guardrail.lower_bounds[idx],
+                    self.config.guardrail.upper_bounds[idx],
+                )
+            })
+            .collect()
+    }
+
+    fn write_actuators(&self, _commands: &[f64]) {
+        // Flushes safe commands to the actuator drivers
+    }
+}
+
+fn main() {
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    // Attach POSIX termination hooks
+    ctrlc::set_handler(move || {
+        println!("\n[SHIVA] Intercepted SIGINT/SIGTERM.");
+        r.store(false, Ordering::SeqCst);
+    }).expect("Error setting signal handler");
+
+    let config = ShivaDeploymentConfig {
+        system_frequency_hz: 100.0,
+        guardrail: GuardrailSettings {
+            lower_bounds: vec![-5.0, -10.0],
+            upper_bounds: vec![5.0, 10.0],
+            max_slew_rates: vec![20.0, 40.0],
+        },
+    };
+
+    let supervisor = ShivaRuntimeSupervisor::new(config, running);
+    supervisor.run_deployment_loop();
+}
+
+```
+
+---
+
+### 3. IPC Hardware Ingestion Daemon (Python Sidecar)
+
+In deployments where high-level drivers or neural network models run in Python while the safety engine runs natively, an IPC sidecar routes telemetry over a local Unix domain socket:
+
+```python
+import socket
+import struct
+import time
+import numpy as np
+
+SOCKET_PATH = "/tmp/shiva_ipc.sock"
+
+class ShivaDeploymentBridge:
+    def __init__(self, obs_dim: int, act_dim: int):
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+
+    def connect(self, timeout_secs: float = 5.0):
+        start_time = time.time()
+        while time.time() - start_time < timeout_secs:
+            try:
+                self.client.connect(SOCKET_PATH)
+                print(f"[BRIDGE] Connected to Shiva native socket at {SOCKET_PATH}")
+                return
+            except (FileNotFoundError, ConnectionRefusedError):
+                time.sleep(0.2)
+        raise TimeoutError("Could not connect to Shiva runtime socket.")
+
+    def step(self, observation: np.ndarray) -> np.ndarray:
+        """
+        Sends observation payload and receives validated, safe action commands.
+        Format: [obs_len (I) | obs (d...)] -> [act_len (I) | acts (d...)]
+        """
+        # Pack observation
+        obs_payload = struct.pack(f"=I{self.obs_dim}d", self.obs_dim, *observation)
+        self.client.sendall(obs_payload)
+
+        # Receive sanitized action
+        header = self.client.recv(4)
+        if not header:
+            raise ConnectionResetError("Shiva backend closed communication.")
+        
+        (act_len,) = struct.unpack("=I", header)
+        action_data = self.client.recv(8 * act_len)
+        safe_actions = struct.unpack(f"={act_len}d", action_data)
+
+        return np.array(safe_actions, dtype=np.float64)
+
+    def close(self):
+        self.client.close()
+
+if __name__ == "__main__":
+    bridge = ShivaDeploymentBridge(obs_dim=2, act_dim=2)
+    try:
+        bridge.connect()
+        while True:
+            # Example telemetry payload
+            mock_obs = np.array([0.1, -0.4], dtype=np.float64)
+            safe_command = bridge.step(mock_obs)
+            print(f"[ACTUATOR DISPATCH] Output: {safe_command}")
+            time.sleep(0.01)
+    except KeyboardInterrupt:
+        bridge.close()
+
+```
+
+---
+
+### 4. Containerization & Production Edge Setup
+
+#### Multi-Stage `Dockerfile`
+
+```dockerfile
+# Stage 1: Build the native binary with optimization
+FROM rust:1.75-bullseye AS builder
+
+WORKDIR /usr/src/shiva
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+
+RUN cargo build --release
+
+# Stage 2: Minimal runtime image with real-time capability
+FROM debian:bullseye-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgcc-s1 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/shiva
+COPY --from=builder /usr/src/shiva/target/release/shiva-runtime /usr/local/bin/shiva-runtime
+COPY shiva_config.json /opt/shiva/config.json
+
+# Environment configuration
+ENV RUST_LOG=info
+ENV SHIVA_CONFIG_PATH=/opt/shiva/config.json
+
+ENTRYPOINT ["/usr/local/bin/shiva-runtime"]
+
+```
+
+#### Orchestration via `docker-compose.yml`
+
+This deployment definition grants real-time process limits and host device mapping for direct hardware access:
+
+```yaml
+version: '3.8'
+
+services:
+  shiva-controller:
+    image: shiva-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shiva_orchestrator
+    restart: always
+    network_mode: host
+    ipc: host
+    ulimits:
+      rtprio: 99
+      memlock: -1
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
+    volumes:
+      - /tmp:/tmp
+      - /dev:/dev
+      - ./models:/opt/shiva/models:ro
+    environment:
+      - SHIVA_ENV=production
+      - RUST_BACKTRACE=1
+
+```
+
+---
+
+### Verification and Health Check Checklist
+
+When validating a freshly deployed Shiva instance:
+
+1. **Jitter Verification:** Run `chrt -f 80 /usr/local/bin/shiva-runtime` and measure delta timestamps across consecutive ticks to confirm standard deviation stays below hardware deadlines (typically $<100\,\mu\text{s}$).
+2. **Boundary Stress Testing:** Feed saturated vectors (`[-1e6, 1e6]`) to verify the guardrail nodes clamp output arrays to the configured min/max parameters.
+3. **Failover Response:** Intentionally send `NaN` observations to confirm the `FailureEngine` invokes the deterministic fallback mode within a single control period.
+
