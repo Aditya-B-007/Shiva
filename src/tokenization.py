@@ -50,11 +50,23 @@ if __name__ == "__main__":
         print("Loading existing tokenizer...")
         tokenizer.load()
     test_texts = [
-        "I want to control the temperature of a reactor.",
-        "The Middleman Protocol transforms observations into a state representation.",
-        "The agent receives a reward and selects an action based on the current state.",
-        "The actuator is constrained to a torque range of -5 Nm to +5 Nm.",
-        "let action = controller.compute_action(state);"
+       "Mothership",
+    "Middleman Protocol",
+    "EnvironmentMatrix",
+    "AdapterTransformation",
+    "Fast Decision Node",
+    "Guardrail Failure Engine",
+    "Actuator Dispatch",
+    "reinforcement learning",
+    "control policy",
+    "state representation",
+    "reward function",
+    "model predictive control",
+    "CPO",
+    "TD3",
+    "SAC",
+    "IQN",
+    "RND",
     ]
     for text in test_texts:
         encoded = tokenizer.encode(text)
@@ -65,3 +77,4 @@ if __name__ == "__main__":
         print(f"Decoded Text: {decoded}")
         assert text == decoded, "Encode-decode mismatch"
     print("\nTokenizer validation passed successfully!")
+    print("Vocabulary size:", tokenizer.tokenizer.get_vocab_size())
