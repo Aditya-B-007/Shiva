@@ -2,6 +2,8 @@
 
 **Nandi** is a lightweight, domain-specialized Small Language Model (SLM) designed to bridge the user interface with **Shiva.ai**'s control and orchestration systems. Built with modern transformer innovations, Nandi provides fast, efficient token generation and reasoning for domain-specific control tasks.
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/5048a624-fb58-4792-9b83-674dc8014bc4" />
+
 ---
 
 ## 🏗️ Architectural Overview
