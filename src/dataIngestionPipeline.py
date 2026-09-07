@@ -114,7 +114,7 @@ if __name__ == "__main__":
         with open(Config.CORPUS_PATH, "r", encoding="utf-8") as f:
             sample_txt = f.read()
 
-        dataloader = create_dataloader_v1(
+        dataloader = create_dataloader(
             txt=sample_txt,
             tokenizer=tokenizer,
             batch_size=Config.BATCH_SIZE,

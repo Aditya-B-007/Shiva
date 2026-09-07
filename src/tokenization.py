@@ -16,7 +16,7 @@ class TokenizerNandi:
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         trainer = trainers.BpeTrainer(
             special_tokens=["<unk>", "<pad>", "</s>", "<|thought|>"],
-            vocab_size=8192,
+            vocab_size=50257,
             min_frequency=2,
             initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
         )
@@ -36,6 +36,8 @@ class TokenizerNandi:
         return self.tokenizer.encode(text)
     def decode(self, token_ids, skip_special_tokens=False):
         return self.tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
+    def get_vocab_size(self):
+        return self.tokenizer.get_vocab_size()
 
 if __name__ == "__main__":
     corpus_path = Config.CORPUS_PATH
@@ -43,11 +45,14 @@ if __name__ == "__main__":
 
     tokenizer = TokenizerNandi()
     model_path = Config.MODEL_ARTIFACTS_PATH
-    if not os.path.exists(model_path) or os.path.getsize(model_path) == 0:
-        print("Training new tokenizer...")
+    import sys
+    force_retrain = "--train" in sys.argv or "--force" in sys.argv
+
+    if force_retrain or not os.path.exists(model_path) or os.path.getsize(model_path) == 0:
+        print(f"Training new tokenizer on {corpus_path}...")
         tokenizer.train(corpus_path)
     else:
-        print("Loading existing tokenizer...")
+        print(f"Loading existing tokenizer from {model_path} (use --train to retrain)...")
         tokenizer.load()
     test_texts = [
        "Mothership",

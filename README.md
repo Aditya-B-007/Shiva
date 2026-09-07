@@ -42,17 +42,18 @@ Shiva/
 
 ---
 
-## ⚙️ Model Specifications
+## ⚙️ Model Specifications (Lightweight SLM)
 
-| Parameter | Default Value | Description |
+| Parameter | Value | Description |
 | :--- | :--- | :--- |
-| `ntoken` | `50,257` (or `8,192` custom BPE) | Vocabulary size |
-| `ninp` (`d_model`) | `1024` | Hidden representation dimension |
-| `nhead` | `16` | Attention heads (`head_dim = 64`) |
-| `nhid` | `4096` | MLP hidden feed-forward dimension |
-| `nlayers` | `20` | Transformer blocks |
+| `ntoken` | `9,437` (custom domain BPE) | Vocabulary size |
+| `ninp` (`d_model`) | `512` | Hidden representation dimension |
+| `nhead` | `8` | Attention heads (`head_dim = 64`) |
+| `nhid` | `2048` | MLP hidden feed-forward dimension |
+| `nlayers` | `8` | Transformer blocks (optimized for laptop thermals) |
 | `dropout` | `0.1` | Dropout rate |
 | `max_seq_len` | `8192` | RoPE precomputed cache capacity |
+| **Total Parameters** | **~28.3 Million** | Fast & cool training on Apple Silicon |
 | **Batch Convention** | `(batch_size, seq_len)` | Standard `batch_first=True` |
 
 ---
@@ -91,12 +92,32 @@ Run the model script directly to inspect parameter count and test a forward pass
 python3 src/transformer.py
 ```
 
-Example output:
-```text
-Total Parameters (unique):     218,655,744
-Trainable Parameters (unique): 218,655,744
-Target Parameter Fit:          218.66 Million Parameters
-Output shape successfully verified: torch.Size([4, 32, 50257])
+### 5. Base Pre-Training Execution
+
+Train the base causal model on the domain text:
+
+```bash
+python3 training/train.py
+```
+
+Checkpoints will be saved automatically to `model_artifacts/checkpoints/`.
+
+### 6. Supervised Fine-Tuning (SFT) on Q&A / Reasoning Data
+
+Fine-tune the pre-trained weights on the 1,000 prompt $\to$ spec question-and-answer pairs with prompt loss-masking:
+
+```bash
+python3 training/finetune_qa.py
+```
+
+This generates `model_artifacts/checkpoints/nandi_chat_final.pt`.
+
+### 7. Interactive Chat & Testing
+
+Chat with your fine-tuned Nandi assistant:
+
+```bash
+python3 src/chat.py
 ```
 
 ---

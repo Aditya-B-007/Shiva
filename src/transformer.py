@@ -3,13 +3,11 @@ import torch.nn as nn
 import math
 
 def rotate_half(x):
-    """Rotates half the hidden dimensions of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
 
 def apply_rotary_pos_emb(x, cos, sin):
-    """Applies Rotary Position Embedding to Query or Key tensors."""
     # x: (batch_size, num_heads, seq_len, head_dim)
     # cos, sin: (1, 1, seq_len, head_dim)
     return (x * cos) + (rotate_half(x) * sin)
@@ -62,7 +60,6 @@ class CausalSelfAttention(nn.Module):
         k = self.k_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
         v = self.v_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
 
-        # Apply RoPE to queries and keys
         q = apply_rotary_pos_emb(q, cos, sin)
         k = apply_rotary_pos_emb(k, cos, sin)
 
@@ -97,7 +94,7 @@ class TransformerBlock(nn.Module):
         return x
 
 class TransformerModel(nn.Module):
-    def __init__(self, ntoken=50257, ninp=1024, nhead=16, nhid=4096, nlayers=20, dropout=0.1, max_seq_len=8192):
+    def __init__(self, ntoken=9437, ninp=512, nhead=8, nhid=2048, nlayers=8, dropout=0.1, max_seq_len=8192):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.ninp = ninp
@@ -155,9 +152,56 @@ class TransformerModel(nn.Module):
         logits = self.decoder(x)
         return logits
 
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens=250, temperature=0.5, top_k=30, top_p=0.85, repetition_penalty=1.2, eos_token_id=None):
+        """
+        Improved generation loop with repetition penalty and nucleus sampling.
+        """
+        for _ in range(max_new_tokens):
+            idx_cond = idx if idx.size(1) <= 8192 else idx[:, -8192:]
+            
+            logits = self(idx_cond)
+            logits = logits[:, -1, :] / max(temperature, 1e-5)
+
+            # Apply repetition penalty to recently generated tokens
+            if repetition_penalty != 1.0:
+                for b in range(idx.size(0)):
+                    recent_tokens = set(idx[b, -64:].tolist())
+                    for token_id in recent_tokens:
+                        if logits[b, token_id] > 0:
+                            logits[b, token_id] /= repetition_penalty
+                        else:
+                            logits[b, token_id] *= repetition_penalty
+
+            # Top-K filtering
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+
+            # Top-P (Nucleus) filtering
+            if top_p is not None and top_p < 1.0:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+                sorted_indices_to_remove = cumulative_probs > top_p
+                # Shift right to keep first token above threshold
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                sorted_indices_to_remove[..., 0] = 0
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                logits[indices_to_remove] = -float('Inf')
+
+            probs = torch.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+
+            if eos_token_id is not None and (idx_next == eos_token_id).all():
+                break
+
+            idx = torch.cat((idx, idx_next), dim=1)
+
+        return idx
+
 if __name__ == "__main__":
     # Test batch_first: (batch_size=4, seq_len=32)
-    model = TransformerModel(ntoken=50257, ninp=1024, nhead=16, nhid=4096, nlayers=20)
+    model = TransformerModel(ntoken=9437, ninp=512, nhead=8, nhid=2048, nlayers=8)
     
     # Deduplicate tied parameters when counting
     unique_params = set(model.parameters())
@@ -169,6 +213,6 @@ if __name__ == "__main__":
     print(f"Target Parameter Fit:          {total_params / 1_000_000:.2f} Million Parameters")
 
     # Shape: (batch_size=4, seq_len=32)
-    dummy_input = torch.randint(0, 50257, (4, 32)) 
+    dummy_input = torch.randint(0, 9437, (4, 32)) 
     dummy_output = model(dummy_input)
     print(f"Output shape successfully verified: {dummy_output.shape}")
