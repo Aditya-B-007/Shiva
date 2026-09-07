@@ -25,17 +25,23 @@ Nandi uses a modern **Causal Decoder-Only Transformer** built for speed, stabili
 ```text
 Shiva/
 ├── data/
-│   ├── data.txt                      # Raw corpus for tokenizer training & ingestion
-│   └── nandiTrain.jsonl              # Supervised fine-tuning / reasoning training dataset
+│   ├── data.txt                      # 9.1 MB domain text corpus (architecture, code, robotics)
+│   └── nandiTrain.jsonl              # 500 curated Q&A pairs with thoughts & human-readable responses
 │
 ├── model_artifacts/
 │   ├── tokeniser/                    # Serialized BPE tokenizer model (tokeniser.json)
+│   ├── checkpoints/                  # Trained PyTorch model checkpoints (.pt)
 │   └── dataProcessing/               # Data pipeline artifacts & preprocessed caches
 │
 ├── src/
 │   ├── tokenization.py               # Custom Byte-Level BPE Tokenizer (TokenizerNandi)
 │   ├── dataIngestionPipeline.py      # Chunked PyTorch Dataset & DataLoader pipeline
-│   └── transformer.py                # Core Transformer architecture with RoPE & SDPA
+│   ├── transformer.py                # 28M RoPE + FlashAttention Causal Transformer architecture
+│   └── chat.py                       # Interactive terminal chat & completion interface
+│
+├── training/
+│   ├── trainingNandiOnData.py        # Stage 1: Pre-training on domain corpus with MPS acceleration
+│   └── finetuningNandi.py            # Stage 2: Supervised Fine-Tuning (SFT) on Q&A reasoning pairs
 │
 └── README.md
 ```
@@ -100,17 +106,17 @@ python3 src/transformer.py
 Train the base causal model on the domain text:
 
 ```bash
-python3 training/train.py
+python3 training/trainingNandiOnData.py
 ```
 
 Checkpoints will be saved automatically to `model_artifacts/checkpoints/`.
 
 ### 6. Supervised Fine-Tuning (SFT) on Q&A / Reasoning Data
 
-Fine-tune the pre-trained weights on the 1,000 prompt $\to$ spec question-and-answer pairs with prompt loss-masking:
+Fine-tune the pre-trained weights on the curated question-and-answer pairs with prompt loss-masking:
 
 ```bash
-python3 training/finetune_qa.py
+python3 training/finetuningNandi.py
 ```
 
 This generates `model_artifacts/checkpoints/nandi_chat_final.pt`.
