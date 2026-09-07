@@ -58,6 +58,9 @@ Shiva/
 
 ---
 
+<img width="1122" height="665" alt="Screenshot 2026-09-07 at 11 50 40 PM" src="https://github.com/user-attachments/assets/20481296-24dc-4012-bbca-d808beeb103d" />
+
+
 ## 🚀 Quickstart
 
 ### 1. Requirements
