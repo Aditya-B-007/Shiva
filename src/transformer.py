@@ -2,15 +2,6 @@ import torch
 import torch.nn as nn
 import math
 
-# Additions implemented:
-# 1. Rotary Position Embeddings (RoPE) applied to Q and K for strong length extrapolation in reasoning.
-# 2. FlashAttention / Scaled Dot-Product Attention (SDPA) with causal masking.
-# 3. Pre-Layer Normalization architecture with final LayerNorm before the LM head.
-# 4. Weight tying between token embedding and output projection matrix.
-# 5. Orthogonal weight initialization.
-# 6. GELU activation function in the feed-forward network.
-# 7. Standard batch-first format (batch_size, seq_len).
-
 def rotate_half(x):
     """Rotates half the hidden dimensions of the input."""
     x1 = x[..., : x.shape[-1] // 2]
