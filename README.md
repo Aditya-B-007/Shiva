@@ -59,7 +59,7 @@ Shiva/
 | `nlayers` | `8` | Transformer blocks (optimized for laptop thermals) |
 | `dropout` | `0.1` | Dropout rate |
 | `max_seq_len` | `8192` | RoPE precomputed cache capacity |
-| **Total Parameters** | **~28.3 Million** | Fast & cool training on Apple Silicon |
+| **Total Parameters** | **~28.3 Million** | Fast & cool training on Apple Silicon or intel chips or NVIDEA GPU |
 | **Batch Convention** | `(batch_size, seq_len)` | Standard `batch_first=True` |
 
 ---
