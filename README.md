@@ -34,7 +34,7 @@ Shiva/
 ├── src/
 │   ├── tokenization.py               # Custom Byte-Level BPE Tokenizer (TokenizerNandi)
 │   ├── dataIngestionPipeline.py      # Chunked PyTorch Dataset & DataLoader pipeline
-│   ├── transformer.py                # 28M RoPE + FlashAttention Causal Transformer architecture
+│   ├── transformer.py                # 30.2M RoPE + FlashAttention Causal Transformer architecture
 │   └── chat.py                       # Interactive terminal chat & completion interface
 │
 ├── training/
@@ -52,14 +52,16 @@ All the files are not listed and present citing the size of the files such as th
 
 | Parameter | Value | Description |
 | :--- | :--- | :--- |
-| `ntoken` | `9,437` (custom domain BPE) | Vocabulary size |
+| `ntoken` | `9,714` (custom domain BPE) | Vocabulary size |
 | `ninp` (`d_model`) | `512` | Hidden representation dimension |
 | `nhead` | `8` | Attention heads (`head_dim = 64`) |
 | `nhid` | `2048` | MLP hidden feed-forward dimension |
-| `nlayers` | `8` | Transformer blocks (optimized for laptop thermals) |
+| `nlayers` | `8` | Transformer blocks (optimized for thermals & throughput) |
 | `dropout` | `0.1` | Dropout rate |
 | `max_seq_len` | `8192` | RoPE precomputed cache capacity |
-| **Total Parameters** | **~28.3 Million** | Fast & cool training on Apple Silicon or intel chips or NVIDEA GPU |
+| **Embedding Table** | **4.97M params** | Only 16.5% of model (tied `decoder.weight = encoder.weight`) |
+| **Transformer Core**| **25.18M params** | 83.5% of capacity dedicated to causal attention & reasoning |
+| **Total Parameters** | **30,156,800 (~30.2M)** | Fast & cool training on Apple Silicon, Intel, or NVIDIA GPUs |
 | **Batch Convention** | `(batch_size, seq_len)` | Standard `batch_first=True` |
 
 ---
