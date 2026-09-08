@@ -101,13 +101,10 @@ def get_data_loader(
 
 
 if __name__ == "__main__":
-    print("Initializing Data Ingestion Pipeline...")
     tokenizer = TokenizerNandi()
     if os.path.exists(tokenizer.model_path):
         tokenizer.load()
-        print(f"Loaded tokenizer from {tokenizer.model_path}")
     else:
-        print(f"Training tokenizer using corpus at {Config.CORPUS_PATH}...")
         tokenizer.train(Config.CORPUS_PATH)
 
     if os.path.exists(Config.CORPUS_PATH):
@@ -121,13 +118,8 @@ if __name__ == "__main__":
             max_length=Config.MAX_LENGTH,
             stride=Config.STRIDE,
         )
-
-        print(f"Dataset chunks created: {len(dataloader.dataset)}")
-        print(f"Total batches: {len(dataloader)}")
         for x, y in dataloader:
-            print(f"Input batch shape: {x.shape} (dtype: {x.dtype})")
-            print(f"Target batch shape: {y.shape} (dtype: {y.dtype})")
             break
     else:
-        print(f"Corpus file not found at {Config.CORPUS_PATH}")
+        print("Path not there!!")
 
