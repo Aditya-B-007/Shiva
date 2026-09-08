@@ -2,8 +2,8 @@ import os
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers, decoders
 
 class Config:
-    CORPUS_PATH = "/Users/aditya/Desktop/Projects/Shiva/data/data.txt"
-    MODEL_ARTIFACTS_PATH = "/Users/aditya/Desktop/Projects/Shiva/model_artifacts/tokeniser/tokeniser.json"
+    CORPUS_PATH = "<Add the file path here>" #Or you can use a config file for this.
+    MODEL_ARTIFACTS_PATH = "<Add the fle path here>"#Same here
 
 class TokenizerNandi:
     def __init__(self, model_path=Config.MODEL_ARTIFACTS_PATH):
