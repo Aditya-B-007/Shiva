@@ -8,7 +8,6 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-# Ensure project root is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.tokenization import TokenizerNandi
@@ -19,22 +18,22 @@ class SFTConfig:
     BASE_CHECKPOINT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints", "nandi_final.pt"))
     OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
     
-    # Model Specs (must match pre-trained base model)
+    # Model Specs
     NINP = 512
     NHEAD = 8
     NHID = 2048
     NLAYERS = 8
     DROPOUT = 0.05
-    MAX_SEQ_LEN = 512    # Q&A pairs with JSON specs fit well within 512 tokens
+    MAX_SEQ_LEN = 512 
     
     # Fine-Tuning Hyperparameters
     BATCH_SIZE = 4
-    GRAD_ACCUM_STEPS = 4 # Effective Batch Size = 16
-    LEARNING_RATE = 1e-4 # Lower LR for fine-tuning to preserve pre-trained knowledge
+    GRAD_ACCUM_STEPS = 4 
+    LEARNING_RATE = 1e-4
     MIN_LR = 1e-5
     WEIGHT_DECAY = 0.01
     GRAD_CLIP = 1.0
-    EPOCHS = 3           # 3 epochs is standard for instruction fine-tuning
+    EPOCHS = 3 
     EVAL_INTERVAL = 25
     SAVE_INTERVAL = 100
 
@@ -64,7 +63,6 @@ class NandiQADataset(Dataset):
         thought = record.get("thought", "").strip()
         response_text = record.get("assistant_response", "").strip()
         
-        # Ensure end-of-sequence token is attached
         if not response_text.endswith("</s>"):
             response_text = response_text + "</s>"
 
@@ -77,16 +75,10 @@ class NandiQADataset(Dataset):
         full_ids = user_prompt_ids + assistant_ids
         if len(full_ids) > self.max_seq_len:
             full_ids = full_ids[:self.max_seq_len]
-
-        # MASK ONLY THE USER PROMPT. The assistant must learn to generate the thought AND the answer!
         prompt_len = min(len(user_prompt_ids), len(full_ids))
         target_ids = [-100] * prompt_len + full_ids[prompt_len:]
-
-        # Shift right by 1 for next-token prediction
         input_chunk = full_ids[:-1]
         target_chunk = target_ids[1:]
-
-        # Pad sequences to max_seq_len - 1
         pad_len = (self.max_seq_len - 1) - len(input_chunk)
         if pad_len > 0:
             input_chunk = input_chunk + [self.pad_token_id] * pad_len
@@ -122,17 +114,13 @@ def get_device_and_dtype():
 
 def finetune():
     device, use_amp, amp_dtype = get_device_and_dtype()
-    print("==================================================")
     print("Starting Supervised Fine-Tuning (SFT) on Q&A Data")
-    print("==================================================")
 
-    # 1. Load Tokenizer
     tokenizer = TokenizerNandi()
     tokenizer.load()
     vocab_size = tokenizer.get_vocab_size()
     print(f"Loaded Tokenizer with Vocab Size: {vocab_size:,}")
 
-    # 2. Instantiate Model and Load Pre-trained Weights
     model = TransformerModel(
         ntoken=vocab_size,
         ninp=SFTConfig.NINP,
@@ -143,7 +131,6 @@ def finetune():
         max_seq_len=SFTConfig.MAX_SEQ_LEN
     ).to(device)
 
-    # Find base checkpoint
     ckpt_path = SFTConfig.BASE_CHECKPOINT
     if not os.path.exists(ckpt_path):
         candidates = sorted([f for f in os.listdir(SFTConfig.OUTPUT_DIR) if f.startswith("nandi_") and f.endswith(".pt")])
@@ -158,15 +145,12 @@ def finetune():
     model.load_state_dict(checkpoint["model_state_dict"])
     print("Successfully transferred pre-trained weights to Q&A model!")
 
-    # 3. Build Q&A Dataset & DataLoader
     dataset = NandiQADataset(SFTConfig.DATA_PATH, tokenizer, max_seq_len=SFTConfig.MAX_SEQ_LEN)
     dataloader = DataLoader(dataset, batch_size=SFTConfig.BATCH_SIZE, shuffle=True, drop_last=True)
 
     total_optimizer_steps = (len(dataloader) // SFTConfig.GRAD_ACCUM_STEPS) * SFTConfig.EPOCHS
     print(f"Total Batches per Epoch: {len(dataloader):,}")
     print(f"Total SFT Optimization Steps: {total_optimizer_steps:,}")
-
-    # 4. Setup Optimizer & Loss (ignore_index=-100 ignores user prompt tokens)
     optimizer = AdamW(
         model.parameters(),
         lr=SFTConfig.LEARNING_RATE,
@@ -176,7 +160,6 @@ def finetune():
     scheduler = CosineAnnealingLR(optimizer, T_max=total_optimizer_steps, eta_min=SFTConfig.MIN_LR)
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
-    # 5. Fine-Tuning Loop
     global_step = 0
     start_time = time.time()
     model.train()
@@ -234,7 +217,6 @@ def finetune():
         avg_loss = epoch_loss / len(dataloader)
         print(f"Epoch {epoch + 1} Complete | Average Loss: {avg_loss:.4f}")
 
-    # Save Final Fine-Tuned Chat Model
     final_path = os.path.join(SFTConfig.OUTPUT_DIR, "nandi_chat_final.pt")
     torch.save({
         "step": global_step,
