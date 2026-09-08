@@ -30,8 +30,6 @@ Shiva/
 │
 ├── model_artifacts/
 │   ├── tokeniser/                    # Serialized BPE tokenizer model (tokeniser.json)
-│   ├── checkpoints/                  # Trained PyTorch model checkpoints (.pt)
-│   └── dataProcessing/               # Data pipeline artifacts & preprocessed caches
 │
 ├── src/
 │   ├── tokenization.py               # Custom Byte-Level BPE Tokenizer (TokenizerNandi)
