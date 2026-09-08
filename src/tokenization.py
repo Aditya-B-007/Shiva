@@ -49,10 +49,8 @@ if __name__ == "__main__":
     force_retrain = "--train" in sys.argv or "--force" in sys.argv
 
     if force_retrain or not os.path.exists(model_path) or os.path.getsize(model_path) == 0:
-        print(f"Training new tokenizer on {corpus_path}...")
         tokenizer.train(corpus_path)
     else:
-        print(f"Loading existing tokenizer from {model_path} (use --train to retrain)...")
         tokenizer.load()
     test_texts = [
        "Mothership",
@@ -81,5 +79,4 @@ if __name__ == "__main__":
         decoded = tokenizer.decode(encoded.ids)
         print(f"Decoded Text: {decoded}")
         assert text == decoded, "Encode-decode mismatch"
-    print("\nTokenizer validation passed successfully!")
     print("Vocabulary size:", tokenizer.tokenizer.get_vocab_size())
