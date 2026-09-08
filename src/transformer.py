@@ -8,8 +8,6 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 def apply_rotary_pos_emb(x, cos, sin):
-    # x: (batch_size, num_heads, seq_len, head_dim)
-    # cos, sin: (1, 1, seq_len, head_dim)
     return (x * cos) + (rotate_half(x) * sin)
 
 class RotaryEmbedding(nn.Module):
@@ -42,7 +40,7 @@ class RotaryEmbedding(nn.Module):
 class CausalSelfAttention(nn.Module):
     def __init__(self, d_model=1024, nhead=16, dropout=0.1):
         super().__init__()
-        assert d_model % nhead == 0, "d_model must be divisible by nhead"
+        assert d_model % nhead == 0, "d_model must be divisible by nhead" # Divisibility by 2 rule to be upheld as it is easier to distribute the attention between the different heads !
         self.d_model = d_model
         self.nhead = nhead
         self.head_dim = d_model // nhead
@@ -63,7 +61,6 @@ class CausalSelfAttention(nn.Module):
         q = apply_rotary_pos_emb(q, cos, sin)
         k = apply_rotary_pos_emb(k, cos, sin)
 
-        # PyTorch SDPA uses FlashAttention where supported with causal masking
         out = torch.nn.functional.scaled_dot_product_attention(
             q, k, v,
             is_causal=True,
@@ -86,10 +83,8 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x, cos, sin):
-        # Pre-LN attention block with residual connection
+    def forward(self, x, cos, sin):]
         x = x + self.attn(self.ln_1(x), cos, sin)
-        # Pre-LN MLP block with residual connection
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -109,42 +104,26 @@ class TransformerModel(nn.Module):
             TransformerBlock(d_model=ninp, nhead=nhead, nhid=nhid, dropout=dropout)
             for _ in range(nlayers)
         ])
-
-        # Pre-LN final LayerNorm
         self.norm = nn.LayerNorm(ninp)
-
-        # Decoder LM Head
         self.decoder = nn.Linear(ninp, ntoken, bias=False)
-
-        # Weight tying
         self.decoder.weight = self.encoder.weight
 
         self._init_weights()
 
     def _init_weights(self):
-        # Orthogonal initialization for 2D+ weight matrices
         for p in self.parameters():
             if p.dim() > 1:
                 torch.nn.init.orthogonal_(p)
-        
-        # LayerNorm initialization
         for m in self.modules():
             if isinstance(m, nn.LayerNorm):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
 
     def forward(self, src):
-        # src: (batch_size, seq_len)
         B, S = src.shape
-
-        # Token embeddings scaled by sqrt(d_model)
         x = self.encoder(src) * math.sqrt(self.ninp)
         x = self.dropout(x)
-
-        # Compute RoPE cos & sin once for the current sequence length
         cos, sin = self.rotary_emb(x, S)
-
-        # Pass through transformer layers
         for layer in self.layers:
             x = layer(x, cos, sin)
 
@@ -154,16 +133,11 @@ class TransformerModel(nn.Module):
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens=250, temperature=0.5, top_k=30, top_p=0.85, repetition_penalty=1.2, eos_token_id=None):
-        """
-        Improved generation loop with repetition penalty and nucleus sampling.
-        """
         for _ in range(max_new_tokens):
             idx_cond = idx if idx.size(1) <= 8192 else idx[:, -8192:]
             
             logits = self(idx_cond)
             logits = logits[:, -1, :] / max(temperature, 1e-5)
-
-            # Apply repetition penalty to recently generated tokens
             if repetition_penalty != 1.0:
                 for b in range(idx.size(0)):
                     recent_tokens = set(idx[b, -64:].tolist())
@@ -172,18 +146,13 @@ class TransformerModel(nn.Module):
                             logits[b, token_id] /= repetition_penalty
                         else:
                             logits[b, token_id] *= repetition_penalty
-
-            # Top-K filtering
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
-
-            # Top-P (Nucleus) filtering
             if top_p is not None and top_p < 1.0:
                 sorted_logits, sorted_indices = torch.sort(logits, descending=True)
                 cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
                 sorted_indices_to_remove = cumulative_probs > top_p
-                # Shift right to keep first token above threshold
                 sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
                 sorted_indices_to_remove[..., 0] = 0
                 indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
@@ -200,19 +169,10 @@ class TransformerModel(nn.Module):
         return idx
 
 if __name__ == "__main__":
-    # Test batch_first: (batch_size=4, seq_len=32)
     model = TransformerModel(ntoken=9437, ninp=512, nhead=8, nhid=2048, nlayers=8)
-    
-    # Deduplicate tied parameters when counting
     unique_params = set(model.parameters())
     total_params = sum(p.numel() for p in unique_params)
     trainable_params = sum(p.numel() for p in unique_params if p.requires_grad)
-    
     print(f"Total Parameters (unique):     {total_params:,}")
-    print(f"Trainable Parameters (unique): {trainable_params:,}")
-    print(f"Target Parameter Fit:          {total_params / 1_000_000:.2f} Million Parameters")
-
-    # Shape: (batch_size=4, seq_len=32)
     dummy_input = torch.randint(0, 9437, (4, 32)) 
     dummy_output = model(dummy_input)
-    print(f"Output shape successfully verified: {dummy_output.shape}")
