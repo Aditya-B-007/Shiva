@@ -17,31 +17,23 @@ def get_device():
 def chat():
     device = get_device()
     checkpoint_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
-    
-    # Priority: 1. nandi_r1_reasoning.pt (RL CoT) -> 2. nandi_chat_final.pt -> 3. nandi_final.pt
     r1_ckpt = os.path.join(checkpoint_dir, "nandi_r1_reasoning.pt")
     chat_ckpt = os.path.join(checkpoint_dir, "nandi_chat_final.pt")
     base_ckpt = os.path.join(checkpoint_dir, "nandi_final.pt")
 
     if os.path.exists(r1_ckpt):
         checkpoint_path = r1_ckpt
-        print(">> Loading RL-Trained Reasoning Model (nandi_r1_reasoning.pt)...")
     elif os.path.exists(chat_ckpt):
         checkpoint_path = chat_ckpt
-        print(">> Loading SFT Chat Model (nandi_chat_final.pt)...")
     elif os.path.exists(base_ckpt):
         checkpoint_path = base_ckpt
-        print(">> Loading Base Pre-trained Model (nandi_final.pt)...")
     else:
         checkpoints = sorted([f for f in os.listdir(checkpoint_dir) if f.startswith("nandi_") and f.endswith(".pt")]) if os.path.exists(checkpoint_dir) else []
         if checkpoints:
             checkpoint_path = os.path.join(checkpoint_dir, checkpoints[-1])
         else:
-            print(f"No trained checkpoint found at: {checkpoint_dir}")
-            print("Please run `python3 training/train.py` or `python3 training/finetune_qa.py` first!")
             sys.exit(1)
 
-    print("Loading Tokenizer...")
     tokenizer = TokenizerNandi()
     tokenizer.load()
     vocab_size = tokenizer.get_vocab_size()
@@ -69,8 +61,6 @@ def chat():
                 break
             if not prompt.strip():
                 continue
-
-            # Format with instruction-tuning template
             formatted_prompt = f"User: {prompt}\nAssistant: <|thought|>\n"
             encoded = tokenizer.encode(formatted_prompt)
             input_ids = torch.tensor([encoded.ids], dtype=torch.long, device=device)
@@ -93,12 +83,11 @@ def chat():
 
             raw_response = tokenizer.decode(new_tokens)
             
-            # Format Chain of Thought cleanly in the terminal
             if "<|thought|>" in raw_response:
                 parts = raw_response.split("<|thought|>")
                 thought_content = parts[0].strip()
                 final_answer = parts[1].strip() if len(parts) > 1 else ""
-                print(f"[🧠 Thinking Process]\n{thought_content}\n\n[💡 Final Specification]\n{final_answer}")
+                print(f"[Thinking Process]\n{thought_content}\n\n[Final Specification]\n{final_answer}")
             else:
                 print(raw_response)
 
