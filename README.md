@@ -43,7 +43,7 @@ Shiva/
 │
 └── README.md
 ```
-
+All the files not present as the model weights are too big to upload here.
 ---
 
 ## ⚙️ Model Specifications (Lightweight SLM)
