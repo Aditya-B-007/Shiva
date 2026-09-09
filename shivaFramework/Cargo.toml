@@ -1,0 +1,11 @@
+[package]
+name = "shiva-framework"
+version = "0.1.0"
+edition = "2021"
+description = "Shiva 2.0 — Sub-millisecond cognitive operating system & autonomous runtime"
+license = "Apache-2.0"
+
+[lib]
+name = "shiva"
+path = "src/lib.rs"
+crate-type = ["lib"]

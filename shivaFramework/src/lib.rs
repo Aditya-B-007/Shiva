@@ -3,7 +3,6 @@
 // WHAT THIS FILE DOES:
 // Registers all architectural layers of the Shiva runtime + framework contracts
 // and exposes a clean `prelude` module for external developers using the framework.
-// Also registers `ffi` module for C, C++, and Python cross-language integration.
 //
 // MODULE STRUCTURE:
 // ├── framework   — Framework contracts (Node, Orchestrator, SafetyPolicy, etc.)
@@ -14,8 +13,7 @@
 // ├── protocol    — Protocol communication (systemSide, shivaSide, middleMan)
 // ├── adapters    — Concrete InputAdapter / OutputAdapter implementations
 // ├── config      — Framework configuration engine (ShivaConfig, ShivaBuilder)
-// ├── runtime     — ShivaRuntime (primary framework entry point)
-// └── ffi         — C-ABI exports for C, C++, Python, ROS2, and RTOS bindings
+// └── runtime     — ShivaRuntime (primary framework entry point)
 
 pub mod framework;
 pub mod algorithms;
@@ -23,7 +21,6 @@ pub mod brain;
 pub mod config;
 pub mod environment;
 pub mod adapters;
-pub mod ffi;
 pub mod nodes;
 pub mod protocol;
 pub mod runtime;
