@@ -12,30 +12,32 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.tokenization import TokenizerNandi, Config as TokenizerConfig
 from src.transformer import TransformerModel
 from src.dataIngestionPipeline import get_data_loader
+from src.config import default_model_config, default_train_config
 
 class TrainConfig:
     CORPUS_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "data.txt"))
     CHECKPOINT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
     
-    # Model Hyperparameters (Scaled down for cool & fast Mac training: ~28M params)
-    NINP = 512           
-    NHEAD = 8           
-    NHID = 2048          
-    NLAYERS = 8        
-    DROPOUT = 0.1
-    MAX_SEQ_LEN = 256    
+    # Model Hyperparameters from config (~30M params)
+    NINP = default_model_config.ninp           
+    NHEAD = default_model_config.nhead
+    N_KV_HEADS = default_model_config.n_kv_heads
+    NHID = default_model_config.nhid          
+    NLAYERS = default_model_config.nlayers        
+    DROPOUT = default_model_config.dropout
+    MAX_SEQ_LEN = default_model_config.max_seq_len    
     
     # Training Loop Parameters
-    BATCH_SIZE = 8      
-    GRAD_ACCUM_STEPS = 2 
-    STRIDE = 128
-    LEARNING_RATE = 5e-4
-    MIN_LR = 5e-5
-    WEIGHT_DECAY = 0.1
-    GRAD_CLIP = 1.0
-    EPOCHS = 2         
-    EVAL_INTERVAL = 50
-    SAVE_INTERVAL = 250
+    BATCH_SIZE = default_train_config.batch_size      
+    GRAD_ACCUM_STEPS = default_train_config.grad_accum_steps 
+    STRIDE = default_train_config.stride
+    LEARNING_RATE = default_train_config.learning_rate
+    MIN_LR = default_train_config.min_lr
+    WEIGHT_DECAY = default_train_config.weight_decay
+    GRAD_CLIP = default_train_config.grad_clip
+    EPOCHS = default_train_config.epochs         
+    EVAL_INTERVAL = default_train_config.eval_interval
+    SAVE_INTERVAL = default_train_config.save_interval
 
 def get_device_and_dtype():
     if torch.backends.mps.is_available():
@@ -70,6 +72,7 @@ def train():
         ntoken=vocab_size,
         ninp=TrainConfig.NINP,
         nhead=TrainConfig.NHEAD,
+        n_kv_heads=TrainConfig.N_KV_HEADS,
         nhid=TrainConfig.NHID,
         nlayers=TrainConfig.NLAYERS,
         dropout=TrainConfig.DROPOUT,

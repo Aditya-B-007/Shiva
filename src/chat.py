@@ -6,6 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.tokenization import TokenizerNandi
 from src.transformer import TransformerModel
+from src.config import default_model_config
 
 def get_device():
     if torch.cuda.is_available():
@@ -43,10 +44,11 @@ def chat():
     
     model = TransformerModel(
         ntoken=vocab_size,
-        ninp=512,
-        nhead=8,
-        nhid=2048,
-        nlayers=8,
+        ninp=default_model_config.ninp,
+        nhead=default_model_config.nhead,
+        n_kv_heads=default_model_config.n_kv_heads,
+        nhid=default_model_config.nhid,
+        nlayers=default_model_config.nlayers,
         dropout=0.0
     ).to(device)
 

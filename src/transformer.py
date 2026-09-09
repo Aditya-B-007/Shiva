@@ -1,7 +1,14 @@
+#===============All imports are placed here===================
 import torch
 import torch.nn as nn
 import math
+try:
+    from src.config import default_model_config
+except (ImportError, ModuleNotFoundError):
+    from config import default_model_config
+#=============================================================
 
+#=============Mathematic execution functions==================
 def rotate_half(x):
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
@@ -10,6 +17,18 @@ def rotate_half(x):
 def apply_rotary_pos_emb(x, cos, sin):
     return (x * cos) + (rotate_half(x) * sin)
 
+def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+    if n_rep == 1:
+        return x
+    b, n_kv_heads, s, head_dim = x.shape
+    return (
+        x[:, :, None, :, :]
+        .expand(b, n_kv_heads, n_rep, s, head_dim)
+        .reshape(b, n_kv_heads * n_rep, s, head_dim)
+    )
+#==============================================================
+
+#===================RoPE and GQA implementation========================
 class RotaryEmbedding(nn.Module):
     def __init__(self, dim, max_seq_len=8192, base=10000.0):
         super().__init__()
@@ -37,44 +56,75 @@ class RotaryEmbedding(nn.Module):
             self.sin_cached[:, :, :seq_len, :].to(dtype=x.dtype, device=x.device),
         )
 
+#=======================Attention Mechanisms========================
 class CausalSelfAttention(nn.Module):
-    def __init__(self, d_model=1024, nhead=16, dropout=0.1):
+    def __init__(self, dropout: float = 0.0):
         super().__init__()
-        assert d_model % nhead == 0, "d_model must be divisible by nhead" # Divisibility by 2 rule to be upheld as it is easier to distribute the attention between the different heads !
-        self.d_model = d_model
-        self.nhead = nhead
-        self.head_dim = d_model // nhead
         self.dropout = dropout
 
-        self.q_proj = nn.Linear(d_model, d_model, bias=False)
-        self.k_proj = nn.Linear(d_model, d_model, bias=False)
-        self.v_proj = nn.Linear(d_model, d_model, bias=False)
-        self.out_proj = nn.Linear(d_model, d_model, bias=False)
-
-    def forward(self, x, cos, sin):
-        B, S, D = x.shape
-
-        q = self.q_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
-        k = self.k_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
-        v = self.v_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
-
-        q = apply_rotary_pos_emb(q, cos, sin)
-        k = apply_rotary_pos_emb(k, cos, sin)
-
-        out = torch.nn.functional.scaled_dot_product_attention(
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(
             q, k, v,
             is_causal=True,
             dropout_p=self.dropout if self.training else 0.0
         )
 
+class GroupedQueryAttention(nn.Module):
+    def __init__(
+        self,
+        d_model=default_model_config.ninp,
+        nhead=default_model_config.nhead,
+        n_kv_heads=default_model_config.n_kv_heads,
+        dropout=default_model_config.dropout
+    ):
+        super().__init__()
+        assert d_model % nhead == 0, f"d_model ({d_model}) must be divisible by nhead ({nhead})"
+        assert nhead % n_kv_heads == 0, f"nhead ({nhead}) must be divisible by n_kv_heads ({n_kv_heads})"
+        self.d_model = d_model
+        self.nhead = nhead
+        self.n_kv_heads = n_kv_heads
+        self.num_kv_groups = nhead // n_kv_heads
+        self.head_dim = d_model // nhead
+
+        self.q_proj = nn.Linear(d_model, d_model, bias=False)
+        self.k_proj = nn.Linear(d_model, n_kv_heads * self.head_dim, bias=False)
+        self.v_proj = nn.Linear(d_model, n_kv_heads * self.head_dim, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+
+        self.inner_attn = CausalSelfAttention(dropout=dropout)
+
+    def forward(self, x, cos, sin):
+        B, S, D = x.shape
+
+        q = self.q_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(B, S, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(B, S, self.n_kv_heads, self.head_dim).transpose(1, 2)
+
+        q = apply_rotary_pos_emb(q, cos, sin)
+        k = apply_rotary_pos_emb(k, cos, sin)
+
+        k = repeat_kv(k, self.num_kv_groups)
+        v = repeat_kv(v, self.num_kv_groups)
+
+        out = self.inner_attn(q, k, v)
+
         out = out.transpose(1, 2).contiguous().view(B, S, D)
         return self.out_proj(out)
+#==============================================================
 
+#=======================Transformer Block and Model========================
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model=1024, nhead=16, nhid=4096, dropout=0.1):
+    def __init__(
+        self,
+        d_model=default_model_config.ninp,
+        nhead=default_model_config.nhead,
+        n_kv_heads=default_model_config.n_kv_heads,
+        nhid=default_model_config.nhid,
+        dropout=default_model_config.dropout
+    ):
         super().__init__()
         self.ln_1 = nn.LayerNorm(d_model)
-        self.attn = CausalSelfAttention(d_model=d_model, nhead=nhead, dropout=dropout)
+        self.attn = GroupedQueryAttention(d_model=d_model, nhead=nhead, n_kv_heads=n_kv_heads, dropout=dropout)
         self.ln_2 = nn.LayerNorm(d_model)
         self.mlp = nn.Sequential(
             nn.Linear(d_model, nhid, bias=False),
@@ -89,24 +139,35 @@ class TransformerBlock(nn.Module):
         return x
 
 class TransformerModel(nn.Module):
-    def __init__(self, ntoken=9437, ninp=512, nhead=8, nhid=2048, nlayers=8, dropout=0.1, max_seq_len=8192):
+    def __init__(
+        self,
+        ntoken=default_model_config.ntoken,
+        ninp=default_model_config.ninp,
+        nhead=default_model_config.nhead,
+        n_kv_heads=default_model_config.n_kv_heads,
+        nhid=default_model_config.nhid,
+        nlayers=default_model_config.nlayers,
+        dropout=default_model_config.dropout,
+        max_seq_len=default_model_config.max_seq_len
+    ):
         super(TransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.ninp = ninp
         self.ntoken = ntoken
         self.nhead = nhead
+        self.n_kv_heads = n_kv_heads
 
         self.encoder = nn.Embedding(ntoken, ninp)
         self.rotary_emb = RotaryEmbedding(dim=ninp // nhead, max_seq_len=max_seq_len)
         self.dropout = nn.Dropout(dropout)
 
         self.layers = nn.ModuleList([
-            TransformerBlock(d_model=ninp, nhead=nhead, nhid=nhid, dropout=dropout)
+            TransformerBlock(d_model=ninp, nhead=nhead, n_kv_heads=n_kv_heads, nhid=nhid, dropout=dropout)
             for _ in range(nlayers)
         ])
         self.norm = nn.LayerNorm(ninp)
         self.decoder = nn.Linear(ninp, ntoken, bias=False)
-        self.decoder.weight = self.encoder.weight
+        self.decoder.weight = self.encoder.weight #Weight tying between the encoder and decoder to reduce the number of parameters and improve generalization.
 
         self._init_weights()
 
@@ -168,11 +229,17 @@ class TransformerModel(nn.Module):
 
         return idx
 
+#===============================================================
+
+
+#=======================Testing the model========================
+
 if __name__ == "__main__":
-    model = TransformerModel(ntoken=9437, ninp=512, nhead=8, nhid=2048, nlayers=8)
+    model = TransformerModel()
     unique_params = set(model.parameters())
     total_params = sum(p.numel() for p in unique_params)
     trainable_params = sum(p.numel() for p in unique_params if p.requires_grad)
     print(f"Total Parameters (unique):     {total_params:,}")
-    dummy_input = torch.randint(0, 9437, (4, 32)) 
+    dummy_input = torch.randint(0, model.ntoken, (4, 32)) 
     dummy_output = model(dummy_input)
+    print(f"Output shape: {dummy_output.shape}")

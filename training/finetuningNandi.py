@@ -12,17 +12,19 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.tokenization import TokenizerNandi
 from src.transformer import TransformerModel
+from src.config import default_model_config
 
 class SFTConfig:
     DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "nandiTrain.jsonl"))
     BASE_CHECKPOINT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints", "nandi_final.pt"))
     OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
     
-    # Model Specs
-    NINP = 512
-    NHEAD = 8
-    NHID = 2048
-    NLAYERS = 8
+    # Model Specs from config
+    NINP = default_model_config.ninp
+    NHEAD = default_model_config.nhead
+    N_KV_HEADS = default_model_config.n_kv_heads
+    NHID = default_model_config.nhid
+    NLAYERS = default_model_config.nlayers
     DROPOUT = 0.05
     MAX_SEQ_LEN = 512 
     
@@ -125,6 +127,7 @@ def finetune():
         ntoken=vocab_size,
         ninp=SFTConfig.NINP,
         nhead=SFTConfig.NHEAD,
+        n_kv_heads=SFTConfig.N_KV_HEADS,
         nhid=SFTConfig.NHID,
         nlayers=SFTConfig.NLAYERS,
         dropout=SFTConfig.DROPOUT,
