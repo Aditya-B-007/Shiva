@@ -23,6 +23,13 @@ class imageRecognitionEmbedder(nn.Module):
         d_model: int = default_model_config.ninp
     ):
         super().__init__()
+        from src.config import VisionConfig
+        if isinstance(image_size, VisionConfig):
+            cfg = image_size
+            image_size = cfg.image_size
+            patch_size = cfg.patch_size
+            in_channels = cfg.in_channels
+
         assert image_size % patch_size == 0, f"image_size ({image_size}) must be divisible by patch_size ({patch_size})"
         assert d_model % 2 == 0, f"d_model ({d_model}) must be divisible by 2 for factorized 2D spatial coordinates"
 
@@ -107,6 +114,7 @@ class imageRecognitionEmbedder(nn.Module):
 
             output_tokens = model.generate(
                 inputs_embeds=visual_embeds,
+                prefix_len=visual_embeds.size(1),
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 top_k=top_k,

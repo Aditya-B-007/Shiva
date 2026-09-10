@@ -26,6 +26,16 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
         .expand(b, n_kv_heads, n_rep, s, head_dim)
         .reshape(b, n_kv_heads * n_rep, s, head_dim)
     )
+
+def build_prefix_causal_mask(total_len: int, prefix_len: int, device: torch.device, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    mask = torch.full((total_len, total_len), float('-inf'), device=device, dtype=dtype)
+    tril = torch.tril(torch.ones((total_len, total_len), device=device, dtype=torch.bool))
+    mask = mask.masked_fill(tril, 0.0)
+
+    if prefix_len > 0:
+        mask[:prefix_len, :prefix_len] = 0.0
+
+    return mask.unsqueeze(0).unsqueeze(0)
 #==============================================================
 
 #===================RoPE and GQA implementation========================
@@ -62,10 +72,12 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         self.dropout = dropout
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor = None) -> torch.Tensor:
+        is_causal = (attn_mask is None)
         return torch.nn.functional.scaled_dot_product_attention(
             q, k, v,
-            is_causal=True,
+            attn_mask=attn_mask,
+            is_causal=is_causal,
             dropout_p=self.dropout if self.training else 0.0
         )
 
@@ -93,20 +105,34 @@ class GroupedQueryAttention(nn.Module):
 
         self.inner_attn = CausalSelfAttention(dropout=dropout)
 
-    def forward(self, x, cos, sin):
+    def forward(self, x, cos, sin, attn_mask=None, prefix_len=0):
         B, S, D = x.shape
 
         q = self.q_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
         k = self.k_proj(x).view(B, S, self.n_kv_heads, self.head_dim).transpose(1, 2)
         v = self.v_proj(x).view(B, S, self.n_kv_heads, self.head_dim).transpose(1, 2)
 
-        q = apply_rotary_pos_emb(q, cos, sin)
-        k = apply_rotary_pos_emb(k, cos, sin)
+        if prefix_len > 0:
+            text_len = S - prefix_len
+            q_prefix = q[:, :, :prefix_len, :]
+            k_prefix = k[:, :, :prefix_len, :]
+
+            if text_len > 0:
+                q_text = apply_rotary_pos_emb(q[:, :, prefix_len:, :], cos[:, :, :text_len, :], sin[:, :, :text_len, :])
+                k_text = apply_rotary_pos_emb(k[:, :, prefix_len:, :], cos[:, :, :text_len, :], sin[:, :, :text_len, :])
+                q = torch.cat([q_prefix, q_text], dim=2)
+                k = torch.cat([k_prefix, k_text], dim=2)
+            else:
+                q = q_prefix
+                k = k_prefix
+        else:
+            q = apply_rotary_pos_emb(q, cos, sin)
+            k = apply_rotary_pos_emb(k, cos, sin)
 
         k = repeat_kv(k, self.num_kv_groups)
         v = repeat_kv(v, self.num_kv_groups)
 
-        out = self.inner_attn(q, k, v)
+        out = self.inner_attn(q, k, v, attn_mask=attn_mask)
 
         out = out.transpose(1, 2).contiguous().view(B, S, D)
         return self.out_proj(out)
@@ -133,8 +159,8 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x, cos, sin):
-        x = x + self.attn(self.ln_1(x), cos, sin)
+    def forward(self, x, cos, sin, attn_mask=None, prefix_len=0):
+        x = x + self.attn(self.ln_1(x), cos, sin, attn_mask=attn_mask, prefix_len=prefix_len)
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -180,7 +206,7 @@ class TransformerModel(nn.Module):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
 
-    def forward(self, src=None, inputs_embeds=None):
+    def forward(self, src=None, inputs_embeds=None, prefix_len=0):
         if inputs_embeds is not None:
             x = inputs_embeds
             B, S, D = x.shape
@@ -191,9 +217,17 @@ class TransformerModel(nn.Module):
             raise ValueError("Either src (token IDs) or inputs_embeds must be provided.")
 
         x = self.dropout(x)
-        cos, sin = self.rotary_emb(x, S)
+
+        if prefix_len > 0:
+            text_len = S - prefix_len
+            cos, sin = self.rotary_emb(x, max(text_len, 1))
+            attn_mask = build_prefix_causal_mask(S, prefix_len, device=x.device, dtype=x.dtype)
+        else:
+            cos, sin = self.rotary_emb(x, S)
+            attn_mask = None
+
         for layer in self.layers:
-            x = layer(x, cos, sin)
+            x = layer(x, cos, sin, attn_mask=attn_mask, prefix_len=prefix_len)
 
         x = self.norm(x)
         logits = self.decoder(x)
@@ -204,6 +238,7 @@ class TransformerModel(nn.Module):
         self,
         idx=None,
         inputs_embeds=None,
+        prefix_len=0,
         max_new_tokens=250,
         temperature=0.5,
         top_k=30,
@@ -214,6 +249,9 @@ class TransformerModel(nn.Module):
         if idx is None and inputs_embeds is None:
             raise ValueError("Either idx or inputs_embeds must be provided to generate")
 
+        if inputs_embeds is not None and prefix_len == 0:
+            prefix_len = inputs_embeds.size(1)
+
         generated_ids = []
         current_embeds = inputs_embeds
         current_idx = idx
@@ -222,10 +260,10 @@ class TransformerModel(nn.Module):
             if current_embeds is not None:
                 max_ctx = self.rotary_emb.max_seq_len
                 cond_embeds = current_embeds if current_embeds.size(1) <= max_ctx else current_embeds[:, -max_ctx:]
-                logits = self(inputs_embeds=cond_embeds)
+                logits = self(inputs_embeds=cond_embeds, prefix_len=prefix_len)
             else:
                 idx_cond = current_idx if current_idx.size(1) <= 8192 else current_idx[:, -8192:]
-                logits = self(src=idx_cond)
+                logits = self(src=idx_cond, prefix_len=0)
 
             logits = logits[:, -1, :] / max(temperature, 1e-5)
             if repetition_penalty != 1.0 and (current_idx is not None or generated_ids):

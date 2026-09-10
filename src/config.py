@@ -41,58 +41,64 @@ def load_config(config_path=CONFIG_PATH):
 
     if os.path.exists(config_path):
         parser = configparser.ConfigParser()
-        parser.read(config_path)
+        try:
+            parser.read(config_path)
+        except configparser.MissingSectionHeaderError:
+            with open(config_path, "r", encoding="utf-8") as f:
+                content = "[default]\n" + f.read()
+            parser.read_string(content)
 
-        if "model" in parser:
-            m = parser["model"]
-            if "ntoken" in m:
-                model_cfg.ntoken = int(m["ntoken"])
-            if "ninp" in m:
-                model_cfg.ninp = int(m["ninp"])
-            if "nhead" in m:
-                model_cfg.nhead = int(m["nhead"])
-            if "n_kv_heads" in m:
-                model_cfg.n_kv_heads = int(m["n_kv_heads"])
-            if "nhid" in m:
-                model_cfg.nhid = int(m["nhid"])
-            if "nlayers" in m:
-                model_cfg.nlayers = int(m["nlayers"])
-            if "dropout" in m:
-                model_cfg.dropout = float(m["dropout"])
-            if "max_seq_len" in m:
-                model_cfg.max_seq_len = int(m["max_seq_len"])
+        kv = {}
+        for section in parser.sections():
+            for k, v in parser[section].items():
+                kv[k.lower()] = v.strip(' "\'')
+        for k, v in parser.defaults().items():
+            kv[k.lower()] = v.strip(' "\'')
 
-        if "vision" in parser:
-            v = parser["vision"]
-            if "image_size" in v:
-                vision_cfg.image_size = int(v["image_size"])
-            if "patch_size" in v:
-                vision_cfg.patch_size = int(v["patch_size"])
-            if "in_channels" in v:
-                vision_cfg.in_channels = int(v["in_channels"])
+        if "ntoken" in kv:
+            model_cfg.ntoken = int(kv["ntoken"])
+        if "ninp" in kv:
+            model_cfg.ninp = int(kv["ninp"])
+        if "nhead" in kv:
+            model_cfg.nhead = int(kv["nhead"])
+        if "n_kv_heads" in kv:
+            model_cfg.n_kv_heads = int(kv["n_kv_heads"])
+        if "nhid" in kv:
+            model_cfg.nhid = int(kv["nhid"])
+        if "nlayers" in kv:
+            model_cfg.nlayers = int(kv["nlayers"])
+        if "dropout" in kv:
+            model_cfg.dropout = float(kv["dropout"])
+        if "max_seq_len" in kv:
+            model_cfg.max_seq_len = int(kv["max_seq_len"])
 
-        if "training" in parser:
-            t = parser["training"]
-            if "batch_size" in t:
-                train_cfg.batch_size = int(t["batch_size"])
-            if "grad_accum_steps" in t:
-                train_cfg.grad_accum_steps = int(t["grad_accum_steps"])
-            if "stride" in t:
-                train_cfg.stride = int(t["stride"])
-            if "learning_rate" in t:
-                train_cfg.learning_rate = float(t["learning_rate"])
-            if "min_lr" in t:
-                train_cfg.min_lr = float(t["min_lr"])
-            if "weight_decay" in t:
-                train_cfg.weight_decay = float(t["weight_decay"])
-            if "grad_clip" in t:
-                train_cfg.grad_clip = float(t["grad_clip"])
-            if "epochs" in t:
-                train_cfg.epochs = int(t["epochs"])
-            if "eval_interval" in t:
-                train_cfg.eval_interval = int(t["eval_interval"])
-            if "save_interval" in t:
-                train_cfg.save_interval = int(t["save_interval"])
+        if "image_size" in kv:
+            vision_cfg.image_size = int(kv["image_size"])
+        if "patch_size" in kv:
+            vision_cfg.patch_size = int(kv["patch_size"])
+        if "in_channels" in kv:
+            vision_cfg.in_channels = int(kv["in_channels"])
+
+        if "batch_size" in kv:
+            train_cfg.batch_size = int(kv["batch_size"])
+        if "grad_accum_steps" in kv:
+            train_cfg.grad_accum_steps = int(kv["grad_accum_steps"])
+        if "stride" in kv:
+            train_cfg.stride = int(kv["stride"])
+        if "learning_rate" in kv:
+            train_cfg.learning_rate = float(kv["learning_rate"])
+        if "min_lr" in kv:
+            train_cfg.min_lr = float(kv["min_lr"])
+        if "weight_decay" in kv:
+            train_cfg.weight_decay = float(kv["weight_decay"])
+        if "grad_clip" in kv:
+            train_cfg.grad_clip = float(kv["grad_clip"])
+        if "epochs" in kv:
+            train_cfg.epochs = int(kv["epochs"])
+        if "eval_interval" in kv:
+            train_cfg.eval_interval = int(kv["eval_interval"])
+        if "save_interval" in kv:
+            train_cfg.save_interval = int(kv["save_interval"])
 
     return model_cfg, vision_cfg, train_cfg
 
