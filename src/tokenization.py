@@ -2,8 +2,8 @@ import os
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers, decoders
 
 class Config:
-    CORPUS_PATH = "<Add the file path here>" #Or you can use a config file for this.
-    MODEL_ARTIFACTS_PATH = "<Add the fle path here>"#Same here
+    CORPUS_PATH = os.getenv("CORPUS_PATH") #Or you can use a config file for this.
+    MODEL_ARTIFACTS_PATH = os.getenv("MODEL_ARTIFACTS_PATH")#Same here
 
 class TokenizerNandi:
     def __init__(self, model_path=Config.MODEL_ARTIFACTS_PATH):

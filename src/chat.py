@@ -1,12 +1,89 @@
 import os
 import sys
-import torch
+import io
+import json
+import base64
+import threading
+import webbrowser
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import torch
 from src.tokenization import TokenizerNandi
 from src.transformer import TransformerModel
-from src.config import default_model_config
+from src.imageRecognitionForNandi import imageRecognitionEmbedder
+from src.config import default_model_config, default_vision_config, HTML_PAGE
+
+
+class ChatRequestHandler(BaseHTTPRequestHandler):
+
+    def __init__(self, *args, **kwargs):
+        self.POST_ROUTES = {
+            "/recognize": self.handle_recognize,
+            "/chat": self.handle_chat
+        }
+        super().__init__(*args, **kwargs)
+
+    def _send_json(self, payload, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode("utf-8"))
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(HTML_PAGE.encode("utf-8"))
+
+    def handle_recognize(self, data):
+        img_data = data.get("image", "")
+        if "," in img_data:
+            img_data = img_data.split(",", 1)[1]
+        img_bytes = base64.b64decode(img_data)
+        img_stream = io.BytesIO(img_bytes)
+
+        result = self.server.embedder.recognize_image(
+            model=self.server.model,
+            tokenizer=self.server.tokenizer,
+            image_input=img_stream,
+            device=self.server.device
+        )
+        self._send_json({"text": result if result else "[Model generated empty description]"})
+
+    def handle_chat(self, data):
+        text = data.get("text", "")
+        formatted_prompt = f"User: {text}\nAssistant: "
+        encoded = self.server.tokenizer.encode(formatted_prompt)
+        input_ids = torch.tensor([encoded.ids], dtype=torch.long, device=self.server.device)
+        eos_id = getattr(self.server.tokenizer, "eos_token_id", None)
+        if eos_id is None and hasattr(self.server.tokenizer, "tokenizer"):
+            eos_id = self.server.tokenizer.tokenizer.token_to_id("</s>")
+
+        output_ids = self.server.model.generate(
+            idx=input_ids,
+            max_new_tokens=250,
+            temperature=0.7,
+            eos_token_id=eos_id
+        )
+        resp_tokens = output_ids[0][input_ids.size(1):].tolist()
+        response = self.server.tokenizer.decode(resp_tokens, skip_special_tokens=True)
+        self._send_json({"text": response if response else "[No response]"})
+
+    
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        data = json.loads(body.decode("utf-8")) if body else {}
+
+        handler = self.POST_ROUTES.get(self.path)
+        if not handler:
+            self.send_error(404, "Endpoint not found")
+            return
+
+        handler(self, data)
 
 def get_device():
     if torch.cuda.is_available():
@@ -15,33 +92,16 @@ def get_device():
         return torch.device("mps")
     return torch.device("cpu")
 
-def chat():
+
+def load_nandi():
     device = get_device()
-    checkpoint_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
-    r1_ckpt = os.path.join(checkpoint_dir, "nandi_r1_reasoning.pt")
-    chat_ckpt = os.path.join(checkpoint_dir, "nandi_chat_final.pt")
-    base_ckpt = os.path.join(checkpoint_dir, "nandi_final.pt")
-
-    if os.path.exists(r1_ckpt):
-        checkpoint_path = r1_ckpt
-    elif os.path.exists(chat_ckpt):
-        checkpoint_path = chat_ckpt
-    elif os.path.exists(base_ckpt):
-        checkpoint_path = base_ckpt
-    else:
-        checkpoints = sorted([f for f in os.listdir(checkpoint_dir) if f.startswith("nandi_") and f.endswith(".pt")]) if os.path.exists(checkpoint_dir) else []
-        if checkpoints:
-            checkpoint_path = os.path.join(checkpoint_dir, checkpoints[-1])
-        else:
-            sys.exit(1)
-
     tokenizer = TokenizerNandi()
-    tokenizer.load()
-    vocab_size = tokenizer.get_vocab_size()
+    if os.path.exists(tokenizer.model_path):
+        tokenizer.load()
+        vocab_size = tokenizer.get_vocab_size()
+    else:
+        vocab_size = default_model_config.ntoken
 
-    print(f"Loading Model from: {checkpoint_path}...")
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    
     model = TransformerModel(
         ntoken=vocab_size,
         ninp=default_model_config.ninp,
@@ -52,50 +112,52 @@ def chat():
         dropout=0.0
     ).to(device)
 
-    model.load_state_dict(checkpoint["model_state_dict"])
+    embedder = imageRecognitionEmbedder(
+        image_size=default_vision_config.image_size,
+        patch_size=default_vision_config.patch_size,
+        in_channels=default_vision_config.in_channels,
+        d_model=default_model_config.ninp
+    ).to(device)
+
+    checkpoint_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
+    if os.path.exists(checkpoint_dir):
+        checkpoints = sorted([f for f in os.listdir(checkpoint_dir) if f.endswith(".pt")])
+        if checkpoints:
+            latest_ckpt = os.path.join(checkpoint_dir, checkpoints[-1])
+            try:
+                ckpt = torch.load(latest_ckpt, map_location=device)
+                if "model_state_dict" in ckpt:
+                    model.load_state_dict(ckpt["model_state_dict"], strict=False)
+            except Exception:
+                pass
+
     model.eval()
-    print("Nandi SLM is ready! Type 'exit' or 'quit' to stop.\n")
+    embedder.eval()
+    return model, embedder, tokenizer, device
 
-    while True:
-        try:
-            prompt = input("\nUser > ")
-            if prompt.strip().lower() in ["exit", "quit"]:
-                break
-            if not prompt.strip():
-                continue
-            formatted_prompt = f"User: {prompt}\nAssistant: <|thought|>\n"
-            encoded = tokenizer.encode(formatted_prompt)
-            input_ids = torch.tensor([encoded.ids], dtype=torch.long, device=device)
 
-            print("\nNandi > ", end="", flush=True)
-            eos_id = tokenizer.tokenizer.token_to_id("</s>")
-            output_ids = model.generate(
-                input_ids,
-                max_new_tokens=450,
-                temperature=0.35,
-                top_k=30,
-                top_p=0.85,
-                repetition_penalty=1.15,
-                eos_token_id=eos_id
-            )
+def start_server_and_open_ui(port=7860):
+    print("\nInitializing Nandi SLM...")
+    model, embedder, tokenizer, device = load_nandi()
+    print("Model loaded successfully on device:", device)
 
-            new_tokens = output_ids[0, input_ids.size(1):].tolist()
-            if eos_id is not None and eos_id in new_tokens:
-                new_tokens = new_tokens[:new_tokens.index(eos_id)]
+    server = HTTPServer(("127.0.0.1", port), ChatRequestHandler)
+    server.model = model
+    server.embedder = embedder
+    server.tokenizer = tokenizer
+    server.device = device
 
-            raw_response = tokenizer.decode(new_tokens)
-            
-            if "<|thought|>" in raw_response:
-                parts = raw_response.split("<|thought|>")
-                thought_content = parts[0].strip()
-                final_answer = parts[1].strip() if len(parts) > 1 else ""
-                print(f"[Thinking Process]\n{thought_content}\n\n[Final Specification]\n{final_answer}")
-            else:
-                print(raw_response)
+    url = f"http://127.0.0.1:{port}"
+    print(f"\nNandi SLM Web UI is running at {url}")
+    print("Automatically opening your web browser...")
 
-        except KeyboardInterrupt:
-            print("\nSession ended.")
-            break
+    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nNandi SLM Web UI stopped.")
+
 
 if __name__ == "__main__":
-    chat()
+    start_server_and_open_ui()

@@ -180,9 +180,16 @@ class TransformerModel(nn.Module):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
 
-    def forward(self, src):
-        B, S = src.shape
-        x = self.encoder(src) * math.sqrt(self.ninp)
+    def forward(self, src=None, inputs_embeds=None):
+        if inputs_embeds is not None:
+            x = inputs_embeds
+            B, S, D = x.shape
+        elif src is not None:
+            B, S = src.shape
+            x = self.encoder(src) * math.sqrt(self.ninp)
+        else:
+            raise ValueError("Either src (token IDs) or inputs_embeds must be provided.")
+
         x = self.dropout(x)
         cos, sin = self.rotary_emb(x, S)
         for layer in self.layers:
@@ -193,20 +200,43 @@ class TransformerModel(nn.Module):
         return logits
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens=250, temperature=0.5, top_k=30, top_p=0.85, repetition_penalty=1.2, eos_token_id=None):
+    def generate(
+        self,
+        idx=None,
+        inputs_embeds=None,
+        max_new_tokens=250,
+        temperature=0.5,
+        top_k=30,
+        top_p=0.85,
+        repetition_penalty=1.2,
+        eos_token_id=None
+    ):
+        if idx is None and inputs_embeds is None:
+            raise ValueError("Either idx or inputs_embeds must be provided to generate")
+
+        generated_ids = []
+        current_embeds = inputs_embeds
+        current_idx = idx
+
         for _ in range(max_new_tokens):
-            idx_cond = idx if idx.size(1) <= 8192 else idx[:, -8192:]
-            
-            logits = self(idx_cond)
+            if current_embeds is not None:
+                max_ctx = self.rotary_emb.max_seq_len
+                cond_embeds = current_embeds if current_embeds.size(1) <= max_ctx else current_embeds[:, -max_ctx:]
+                logits = self(inputs_embeds=cond_embeds)
+            else:
+                idx_cond = current_idx if current_idx.size(1) <= 8192 else current_idx[:, -8192:]
+                logits = self(src=idx_cond)
+
             logits = logits[:, -1, :] / max(temperature, 1e-5)
-            if repetition_penalty != 1.0:
-                for b in range(idx.size(0)):
-                    recent_tokens = set(idx[b, -64:].tolist())
-                    for token_id in recent_tokens:
+            if repetition_penalty != 1.0 and (current_idx is not None or generated_ids):
+                penalty_tokens = set(current_idx[0, -64:].tolist()) if current_idx is not None else set(generated_ids[-64:])
+                for b in range(logits.size(0)):
+                    for token_id in penalty_tokens:
                         if logits[b, token_id] > 0:
                             logits[b, token_id] /= repetition_penalty
                         else:
                             logits[b, token_id] *= repetition_penalty
+
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
@@ -222,12 +252,22 @@ class TransformerModel(nn.Module):
             probs = torch.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
 
+            generated_ids.append(idx_next.item() if idx_next.numel() == 1 else idx_next[0, 0].item())
+
             if eos_token_id is not None and (idx_next == eos_token_id).all():
                 break
 
-            idx = torch.cat((idx, idx_next), dim=1)
+            if current_embeds is not None:
+                next_embed = self.encoder(idx_next) * math.sqrt(self.ninp)
+                current_embeds = torch.cat((current_embeds, next_embed), dim=1)
+            else:
+                current_idx = torch.cat((current_idx, idx_next), dim=1)
 
-        return idx
+        if idx is not None:
+            return current_idx
+        else:
+            dev = inputs_embeds.device if inputs_embeds is not None else torch.device("cpu")
+            return torch.tensor([generated_ids], device=dev)
 
 #===============================================================
 
