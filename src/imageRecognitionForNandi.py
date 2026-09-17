@@ -1,19 +1,90 @@
 import os
 import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
+from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
+from transformers import AutoModel, AutoProcessor
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from PIL import Image
 import torchvision.transforms as transforms
+try:
+    from src.config import default_model_config, default_vision_config, VisionConfig
+except (ImportError, ModuleNotFoundError):
+    from config import default_model_config, default_vision_config, VisionConfig
 
 try:
-    from src.config import default_model_config, default_vision_config
-except (ImportError, ModuleNotFoundError):
-    from config import default_model_config, default_vision_config
+    from transformers import AutoImageProcessor, AutoModel
+except ImportError:
+    AutoImageProcessor, AutoModel = None, None
+
+class IVisionEncoder(ABC, nn.Module):
+    @property
+    @abstractmethod
+    def hidden_dim(self) -> int:
+        pass
+
+    @abstractmethod
+    def extract_features(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        pass
 
 
+class IProjector(ABC, nn.Module):
+    @abstractmethod
+    def project(self, visual_features: torch.Tensor) -> torch.Tensor:
+        pass
+
+class VisionEncoder(IVisionEncoder):
+    def __init__(self, model_name: str = None):
+        super().__init__()
+        if model_name is None:
+            model_name = getattr(default_vision_config, "model", "google/siglip-base-patch16-224")
+        self.processor = AutoImageProcessor.from_pretrained(model_name)
+        model = AutoModel.from_pretrained(model_name)
+        self.vision_model = model.vision_model if hasattr(model, "vision_model") else model
+
+        for param in self.vision_model.parameters():
+            param.requires_grad = False
+
+    @property
+    def hidden_dim(self) -> int:
+        return self.vision_model.config.hidden_size
+
+    def extract_features(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():
+            outputs = self.vision_model(pixel_values=pixel_values)
+            return outputs.last_hidden_state
+
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        return self.extract_features(pixel_values)
+
+
+class MLPProjector(IProjector):
+    def __init__(self, visual_dim: int, language_dim: int):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(visual_dim, language_dim),
+            nn.GELU(),
+            nn.Linear(language_dim, language_dim)
+        )
+
+    def project(self, visual_features: torch.Tensor) -> torch.Tensor:
+        return self.network(visual_features)
+
+    def forward(self, visual_features: torch.Tensor) -> torch.Tensor:
+        return self.project(visual_features)
+
+
+class VisionBridge(nn.Module):
+    def __init__(self, encoder: IVisionEncoder, projector: IProjector):
+        super().__init__()
+        self.encoder = encoder
+        self.projector = projector
+
+    def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
+        raw_features = self.encoder(pixel_values)
+        return self.projector(raw_features)
+
+    
 class imageRecognitionEmbedder(nn.Module):
     def __init__(
         self,

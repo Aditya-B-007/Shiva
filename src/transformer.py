@@ -206,6 +206,23 @@ class TransformerModel(nn.Module):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
 
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.encoder
+
+    def resize_token_embeddings(self, new_num_tokens: int):
+        if new_num_tokens == self.ntoken:
+            return
+        old_embeddings = self.encoder
+        new_embeddings = nn.Embedding(new_num_tokens, self.ninp, device=old_embeddings.weight.device)
+        nn.init.orthogonal_(new_embeddings.weight)
+        n_copy = min(self.ntoken, new_num_tokens)
+        with torch.no_grad():
+            new_embeddings.weight[:n_copy] = old_embeddings.weight[:n_copy]
+        self.encoder = new_embeddings
+        self.decoder = nn.Linear(self.ninp, new_num_tokens, bias=False, device=old_embeddings.weight.device)
+        self.decoder.weight = self.encoder.weight
+        self.ntoken = new_num_tokens
+
     def forward(self, src=None, inputs_embeds=None, prefix_len=0):
         if inputs_embeds is not None:
             x = inputs_embeds
@@ -253,6 +270,7 @@ class TransformerModel(nn.Module):
             prefix_len = inputs_embeds.size(1)
 
         generated_ids = []
+        generated_tokens = None
         current_embeds = inputs_embeds
         current_idx = idx
 
@@ -296,6 +314,7 @@ class TransformerModel(nn.Module):
                 break
 
             if current_embeds is not None:
+                generated_tokens = idx_next if generated_tokens is None else torch.cat((generated_tokens, idx_next), dim=1)
                 next_embed = self.encoder(idx_next) * math.sqrt(self.ninp)
                 current_embeds = torch.cat((current_embeds, next_embed), dim=1)
             else:
@@ -304,8 +323,7 @@ class TransformerModel(nn.Module):
         if idx is not None:
             return current_idx
         else:
-            dev = inputs_embeds.device if inputs_embeds is not None else torch.device("cpu")
-            return torch.tensor([generated_ids], device=dev)
+            return generated_tokens if generated_tokens is not None else torch.empty((inputs_embeds.size(0), 0), dtype=torch.long, device=inputs_embeds.device)
 
 #===============================================================
 

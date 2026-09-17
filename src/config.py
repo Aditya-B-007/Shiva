@@ -20,6 +20,7 @@ class VisionConfig:
     image_size: int = 224
     patch_size: int = 16
     in_channels: int = 3
+    model: str = "google/siglip-base-patch16-224"
 
 @dataclass
 class TrainConfig:
@@ -33,7 +34,7 @@ class TrainConfig:
     epochs: int = 2
     eval_interval: int = 50
     save_interval: int = 250
-
+    
 def load_config(config_path=CONFIG_PATH):
     model_cfg = ModelConfig()
     vision_cfg = VisionConfig()
@@ -78,6 +79,8 @@ def load_config(config_path=CONFIG_PATH):
             vision_cfg.patch_size = int(kv["patch_size"])
         if "in_channels" in kv:
             vision_cfg.in_channels = int(kv["in_channels"])
+        if "model" in kv:
+            vision_cfg.model = str(kv["model"])
 
         if "batch_size" in kv:
             train_cfg.batch_size = int(kv["batch_size"])

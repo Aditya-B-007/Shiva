@@ -1,21 +1,27 @@
 import os
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers, decoders
 
+DEFAULT_TOKENIZER_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "tokeniser", "tokeniser.json")
+)
+
 class Config:
-    CORPUS_PATH = os.getenv("CORPUS_PATH") #Or you can use a config file for this.
-    MODEL_ARTIFACTS_PATH = os.getenv("MODEL_ARTIFACTS_PATH")#Same here
+    CORPUS_PATH = os.getenv("CORPUS_PATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "data.txt")))
+    MODEL_ARTIFACTS_PATH = os.getenv("MODEL_ARTIFACTS_PATH", DEFAULT_TOKENIZER_PATH)
 
 class TokenizerNandi:
-    def __init__(self, model_path=Config.MODEL_ARTIFACTS_PATH):
+    def __init__(self, model_path=None):
+        if model_path is None:
+            model_path = Config.MODEL_ARTIFACTS_PATH or DEFAULT_TOKENIZER_PATH
         self.model_path = model_path
         self.tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
         self.tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
         self.tokenizer.decoder = decoders.ByteLevel()
-        special_tokens = ["<unk>", "<pad>", "</s>", "<|thought|>"]
+        special_tokens = ["<unk>", "<pad>", "</s>", "<|thought|>", "<image>"]
     def train(self, corpus_path=Config.CORPUS_PATH):
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         trainer = trainers.BpeTrainer(
-            special_tokens=["<unk>", "<pad>", "</s>", "<|thought|>"],
+            special_tokens=["<unk>", "<pad>", "</s>", "<|thought|>", "<image>"],
             vocab_size=50257,
             min_frequency=2,
             initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
@@ -32,6 +38,8 @@ class TokenizerNandi:
         self.tokenizer.save(self.model_path)
     def load(self):
         self.tokenizer = Tokenizer.from_file(self.model_path)
+    def add_special_tokens(self, tokens):
+        return self.tokenizer.add_special_tokens(tokens)
     def encode(self, text):
         return self.tokenizer.encode(text)
     def decode(self, token_ids, skip_special_tokens=False):
