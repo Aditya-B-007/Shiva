@@ -103,29 +103,51 @@ Run the model script directly to inspect parameter count and test a forward pass
 python3 src/transformer.py
 ```
 
-### 5. Base Pre-Training Execution
+### 5. Stage 1: Base Language Pre-Training
 
-Train the base causal model on the domain text:
+Train the base causal language model on domain text (`data/data.txt`):
 
 ```bash
 python3 training/trainingNandiOnData.py
 ```
 
-Checkpoints will be saved automatically to `model_artifacts/checkpoints/`.
+Checkpoints will be saved automatically to `model_artifacts/checkpoints/nandi_final.pt`.
 
-### 6. Supervised Fine-Tuning (SFT) on Q&A / Reasoning Data
+### 6. Stage 2: Supervised Fine-Tuning (SFT) on Q&A / Reasoning Data
 
-Fine-tune the pre-trained weights on the curated question-and-answer pairs with prompt loss-masking:
+Fine-tune the pre-trained weights on the curated question-and-answer pairs with `<|thought|>` reasoning traces:
 
 ```bash
 python3 training/finetuningNandi.py
 ```
 
-This generates `model_artifacts/checkpoints/nandi_chat_final.pt`.
+Checkpoints will be saved to `model_artifacts/checkpoints/nandi_chat_final.pt`.
 
-### 7. Interactive Chat & Testing
+### 7. Stage 3: Vision-Language Alignment & Multimodal Training
 
-Chat with your fine-tuned Nandi assistant:
+Train the SigLIP vision bridge and multimodal reasoning capabilities on images:
+
+```bash
+# Stage 3A: Alignment warmup (SLM backbone frozen, train MLP Projector only)
+python3 training/trainingMultimodalNandi.py --stage 1
+
+# Stage 3B: End-to-end multimodal fine-tuning (Joint SLM + Projector training)
+python3 training/trainingMultimodalNandi.py --stage 2
+```
+
+Final multimodal weights are saved to `model_artifacts/checkpoints/nandi_vision_final.pt`.
+
+### 8. End-to-End Testing & Verification
+
+Run the full end-to-end verification suite covering text generation, SigLIP vision encoding, multimodal splicing, and optimization convergence:
+
+```bash
+python3 tests/test_end_to_end_pipeline.py
+```
+
+### 9. Interactive Chat & Vision UI
+
+Launch the ChatGPT-style interface with pure image recognition & chat:
 
 ```bash
 python3 src/chat.py

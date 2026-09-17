@@ -120,6 +120,8 @@ def finetune():
 
     tokenizer = TokenizerNandi()
     tokenizer.load()
+    if tokenizer.tokenizer.token_to_id("<image>") is None:
+        tokenizer.add_special_tokens(["<image>"])
     vocab_size = tokenizer.get_vocab_size()
     print(f"Loaded Tokenizer with Vocab Size: {vocab_size:,}")
 

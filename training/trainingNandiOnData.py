@@ -4,12 +4,11 @@ import time
 import math
 import torch
 import torch.nn as nn
+from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from abc import ABC, abstractmethod
-from torch.optim import AdamW, Optimizer
-from src.imageRecognitionForNandi import VisionBridge
-from src.dataIngestionPipeline import IMultimodalSplicer, MultimodalInputBatch
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from src.tokenization import TokenizerNandi, Config as TokenizerConfig
 from src.transformer import TransformerModel
 from src.dataIngestionPipeline import get_data_loader
@@ -35,105 +34,6 @@ class TrainConfig:
     EPOCHS = default_train_config.epochs         
     EVAL_INTERVAL = default_train_config.eval_interval
     SAVE_INTERVAL = default_train_config.save_interval
-
-
-class ILossEvaluator(ABC):
-    @abstractmethod
-    def evaluate(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        pass
-
-
-class MaskedCausalLMLoss(ILossEvaluator):
-    def __init__(self, ignore_index: int = -100, shift_labels: bool = True):
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=ignore_index)
-        self.shift_labels = shift_labels
-
-    def evaluate(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        if self.shift_labels:
-            # Shift tokens for next-token prediction if labels are full unshifted sequences
-            shift_logits = logits[:, :-1, :].contiguous()
-            shift_labels = labels[:, 1:].contiguous()
-        else:
-            # Labels are already target-aligned (e.g. y[t] is already target for x[t])
-            shift_logits = logits
-            shift_labels = labels
-
-        return self.loss_fn(
-            shift_logits.view(-1, shift_logits.size(-1)), 
-            shift_labels.view(-1)
-        )
-
-
-class ITrainingStageConfigurator(ABC):
-    @abstractmethod
-    def configure(self, bridge: VisionBridge, slm: nn.Module, lr: float) -> Optimizer:
-        pass
-
-
-class Stage1AlignmentConfigurator(ITrainingStageConfigurator):
-    def configure(self, bridge: VisionBridge, slm: nn.Module, lr: float) -> Optimizer:
-        for param in slm.parameters():
-            param.requires_grad = False
-        for param in bridge.projector.parameters():
-            param.requires_grad = True
-
-        return AdamW(bridge.projector.parameters(), lr=lr)
-
-
-class Stage2InstructionConfigurator(ITrainingStageConfigurator):
-    def configure(self, bridge: VisionBridge, slm: nn.Module, lr: float) -> Optimizer:
-        for param in slm.parameters():
-            param.requires_grad = True
-        for param in bridge.projector.parameters():
-            param.requires_grad = True
-
-        trainable_params = list(bridge.projector.parameters()) + list(slm.parameters())
-        return AdamW(trainable_params, lr=lr)
-
-
-class MultimodalTrainer:
-    def __init__(
-        self,
-        slm_model: nn.Module,
-        vision_bridge: VisionBridge,
-        splicer: IMultimodalSplicer,
-        loss_evaluator: ILossEvaluator,
-        optimizer: Optimizer,
-        image_token_id: int
-    ):
-        self.slm = slm_model
-        self.bridge = vision_bridge
-        self.splicer = splicer
-        self.loss_evaluator = loss_evaluator
-        self.optimizer = optimizer
-        self.image_token_id = image_token_id
-
-    def execute_step(self, pixel_values: torch.Tensor, input_ids: torch.Tensor, labels: torch.Tensor) -> float:
-        self.slm.train()
-        self.bridge.projector.train()
-        visual_tokens = self.bridge(pixel_values)
-        embedding_layer = self.slm.get_input_embeddings()
-        # Scale text embeddings by sqrt(ninp) to match the Transformer attention energy scale
-        ninp = getattr(self.slm, "ninp", visual_tokens.size(-1))
-        scale = math.sqrt(ninp)
-        text_embeddings = embedding_layer(input_ids) * scale
-        batch_contract = MultimodalInputBatch(
-            input_ids=input_ids,
-            text_embeddings=text_embeddings,
-            visual_tokens=visual_tokens,
-            image_token_id=self.image_token_id,
-            labels=labels
-        )
-        spliced = self.splicer.splice(batch_contract)
-        outputs = self.slm(inputs_embeds=spliced.embeddings)
-        logits = outputs.logits if hasattr(outputs, "logits") else outputs
-        loss = self.loss_evaluator.evaluate(logits, spliced.labels)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        return loss.item()
 
 
 def get_device_and_dtype():
@@ -162,6 +62,8 @@ def train():
         print("Tokenizer model not found! Please train tokenizer first via python3 src/tokenization.py")
         sys.exit(1)
     tokenizer.load()
+    if tokenizer.tokenizer.token_to_id("<image>") is None:
+        tokenizer.add_special_tokens(["<image>"])
     vocab_size = tokenizer.get_vocab_size()
     print(f"Loaded Tokenizer with Vocab Size: {vocab_size:,}")
 
