@@ -24,16 +24,16 @@ class VisionConfig:
 
 @dataclass
 class TrainConfig:
-    batch_size: int = 8
-    grad_accum_steps: int = 2
-    stride: int = 128
-    learning_rate: float = 5e-4
-    min_lr: float = 5e-5
+    batch_size: int = 16
+    grad_accum_steps: int = 4
+    stride: int = 512
+    learning_rate: float = 1.5e-3
+    min_lr: float = 1.5e-4
     weight_decay: float = 0.1
     grad_clip: float = 1.0
-    epochs: int = 2
-    eval_interval: int = 50
-    save_interval: int = 250
+    epochs: int = 1
+    eval_interval: int = 250
+    save_interval: int = 500
     
 def load_config(config_path=CONFIG_PATH):
     model_cfg = ModelConfig()

@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import math
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
@@ -9,7 +8,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.tokenization import TokenizerNandi, Config as TokenizerConfig
+from src.tokenization import TokenizerNandi
 from src.transformer import TransformerModel
 from src.dataIngestionPipeline import get_data_loader
 from src.config import default_model_config, default_train_config
