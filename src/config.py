@@ -143,7 +143,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <body>
 <header>
   <h1>🦬 Nandi SLM</h1>
-  <span class="badge">Gemma 4 Encoder-Free Vision • ~30M Params</span>
+  <span class="badge">nandi2 text+image</span>
 </header>
 <div id="chat-container">
   <div class="msg assistant">👋 Hello! I am Nandi SLM. You can chat with me, or click <b>📎 Image</b> to upload a photo for pure image recognition (Note: if an image is uploaded, text input is locked).</div>

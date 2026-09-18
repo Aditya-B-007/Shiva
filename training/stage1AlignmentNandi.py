@@ -22,10 +22,11 @@ from src.imageRecognitionForNandi import VisionEncoder, MLPProjector, VisionBrid
 from src.dataIngestionPipeline import TokenSplicer, MultimodalInputBatch, IMultimodalSplicer
 
 
-class MultimodalConfig:
+class Stage1Config:
+    DEFAULT_DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "multimodalTrain.jsonl"))
     DEFAULT_CHECKPOINT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
     BASE_CHAT_CHECKPOINT = os.path.join(DEFAULT_CHECKPOINT_DIR, "nandi_chat_final.pt")
-    OUTPUT_FINAL_CHECKPOINT = os.path.join(DEFAULT_CHECKPOINT_DIR, "nandi_vision_final.pt")
+    OUTPUT_STAGE1_CHECKPOINT = os.path.join(DEFAULT_CHECKPOINT_DIR, "nandi_stage1_projector.pt")
     
     NINP = default_model_config.ninp
     NHEAD = default_model_config.nhead
@@ -37,12 +38,11 @@ class MultimodalConfig:
     
     BATCH_SIZE = 2
     GRAD_ACCUM_STEPS = 4
-    STAGE1_LR = 1e-3    # Projector-only warmup alignment
-    STAGE2_LR = 2e-5    # End-to-end multimodal fine-tuning
+    LR = 1e-3           # Projector-only warmup alignment
     MIN_LR = 1e-6
     WEIGHT_DECAY = 0.01
     GRAD_CLIP = 1.0
-    EPOCHS = 3
+    EPOCHS = 8
     EVAL_INTERVAL = 10
     SAVE_INTERVAL = 50
 
@@ -88,24 +88,7 @@ class Stage1AlignmentConfigurator(ITrainingStageConfigurator):
             param.requires_grad = True
 
         print("[+] Stage 1 Configuration: SLM backbone & Vision encoder FROZEN. Training MLP Projector only.")
-        return AdamW(bridge.projector.parameters(), lr=lr, weight_decay=MultimodalConfig.WEIGHT_DECAY)
-
-
-class Stage2InstructionConfigurator(ITrainingStageConfigurator):
-    def configure(self, bridge: VisionBridge, slm: nn.Module, lr: float) -> Optimizer:
-        for param in bridge.encoder.parameters():
-            param.requires_grad = False
-        for param in bridge.projector.parameters():
-            param.requires_grad = True
-        for param in slm.parameters():
-            param.requires_grad = True
-
-        print("[+] Stage 2 Configuration: Vision encoder FROZEN. Jointly fine-tuning SLM + MLP Projector.")
-        trainable_params = [
-            {"params": bridge.projector.parameters(), "lr": lr},
-            {"params": slm.parameters(), "lr": lr * 0.5}
-        ]
-        return AdamW(trainable_params, weight_decay=MultimodalConfig.WEIGHT_DECAY)
+        return AdamW(bridge.projector.parameters(), lr=lr, weight_decay=Stage1Config.WEIGHT_DECAY)
 
 
 class MultimodalTrainer:
@@ -247,10 +230,11 @@ def get_device_and_dtype():
     return device, use_amp, amp_dtype
 
 
-def train_multimodal(stage: int = 1, data_path: Optional[str] = None, base_checkpoint: Optional[str] = None, epochs: int = MultimodalConfig.EPOCHS, lr: Optional[float] = None):
+def train_stage1(data_path: Optional[str] = None, base_checkpoint: Optional[str] = None, epochs: int = Stage1Config.EPOCHS, lr: Optional[float] = None):
     device, use_amp, amp_dtype = get_device_and_dtype()
     print("\n" + "=" * 65)
-    print(f"  STAGE 3: NANDI SLM MULTIMODAL TRAINING (Stage {stage})")
+    print("  STAGE 1: NANDI SLM PROJECTOR ALIGNMENT TRAINING")
+    print("  (SLM backbone & Vision Encoder FROZEN, MLP Projector TRAINED)")
     print("=" * 65)
 
     tokenizer = TokenizerNandi()
@@ -264,53 +248,45 @@ def train_multimodal(stage: int = 1, data_path: Optional[str] = None, base_check
     # 1. Initialize Vision Bridge
     print("[+] Loading SigLIP Vision Encoder & MLP Projector...")
     vision_encoder = VisionEncoder().to(device)
-    mlp_projector = MLPProjector(visual_dim=vision_encoder.hidden_dim, language_dim=MultimodalConfig.NINP).to(device)
+    mlp_projector = MLPProjector(visual_dim=vision_encoder.hidden_dim, language_dim=Stage1Config.NINP).to(device)
     bridge = VisionBridge(encoder=vision_encoder, projector=mlp_projector).to(device)
 
     # 2. Initialize Language Model Backbone
     model = TransformerModel(
         ntoken=vocab_size,
-        ninp=MultimodalConfig.NINP,
-        nhead=MultimodalConfig.NHEAD,
-        n_kv_heads=MultimodalConfig.N_KV_HEADS,
-        nhid=MultimodalConfig.NHID,
-        nlayers=MultimodalConfig.NLAYERS,
-        dropout=MultimodalConfig.DROPOUT,
-        max_seq_len=MultimodalConfig.MAX_SEQ_LEN
+        ninp=Stage1Config.NINP,
+        nhead=Stage1Config.NHEAD,
+        n_kv_heads=Stage1Config.N_KV_HEADS,
+        nhid=Stage1Config.NHID,
+        nlayers=Stage1Config.NLAYERS,
+        dropout=Stage1Config.DROPOUT,
+        max_seq_len=Stage1Config.MAX_SEQ_LEN
     ).to(device)
 
     # 3. Load pre-trained weights if provided
-    ckpt_to_load = base_checkpoint or MultimodalConfig.BASE_CHAT_CHECKPOINT
+    ckpt_to_load = base_checkpoint or Stage1Config.BASE_CHAT_CHECKPOINT
     if not os.path.exists(ckpt_to_load):
         fallback_ckpts = sorted([
-            os.path.join(MultimodalConfig.DEFAULT_CHECKPOINT_DIR, f)
-            for f in os.listdir(MultimodalConfig.DEFAULT_CHECKPOINT_DIR)
+            os.path.join(Stage1Config.DEFAULT_CHECKPOINT_DIR, f)
+            for f in os.listdir(Stage1Config.DEFAULT_CHECKPOINT_DIR)
             if f.endswith(".pt")
-        ]) if os.path.exists(MultimodalConfig.DEFAULT_CHECKPOINT_DIR) else []
+        ]) if os.path.exists(Stage1Config.DEFAULT_CHECKPOINT_DIR) else []
         if fallback_ckpts:
             ckpt_to_load = fallback_ckpts[-1]
-            print(f"[!] Target checkpoint not found. Falling back to latest available: {ckpt_to_load}")
+            print(f"[!] Target chat checkpoint not found. Falling back to latest available: {ckpt_to_load}")
         else:
-            print("[!] No prior language checkpoint found. Initializing with orthogonal base weights.")
+            print("[!] No prior language checkpoint found. Initializing with base weights.")
             ckpt_to_load = None
 
     if ckpt_to_load and os.path.exists(ckpt_to_load):
-        print(f"[+] Loading base checkpoint weights from: {ckpt_to_load}")
+        print(f"[+] Loading language checkpoint weights from: {ckpt_to_load}")
         checkpoint = torch.load(ckpt_to_load, map_location=device)
         state_dict = checkpoint.get("model_state_dict", checkpoint)
         model.load_state_dict(state_dict, strict=False)
-        if "projector_state_dict" in checkpoint:
-            bridge.projector.load_state_dict(checkpoint["projector_state_dict"])
-            print("[+] Successfully loaded pre-trained MLP Projector weights.")
 
-    # 4. Configure Training Stage & Optimizer
-    if stage == 1:
-        configurator = Stage1AlignmentConfigurator()
-        learning_rate = lr or MultimodalConfig.STAGE1_LR
-    else:
-        configurator = Stage2InstructionConfigurator()
-        learning_rate = lr or MultimodalConfig.STAGE2_LR
-
+    # 4. Configure Stage 1 Optimizer
+    configurator = Stage1AlignmentConfigurator()
+    learning_rate = lr or Stage1Config.LR
     optimizer = configurator.configure(bridge, model, lr=learning_rate)
     loss_evaluator = MaskedCausalLMLoss(ignore_index=-100, shift_labels=True)
     splicer = TokenSplicer()
@@ -325,28 +301,29 @@ def train_multimodal(stage: int = 1, data_path: Optional[str] = None, base_check
     )
 
     # 5. Dataset & DataLoader
+    resolved_data_path = data_path or Stage1Config.DEFAULT_DATA_PATH
     dataset = MultimodalDataset(
-        data_path=data_path,
+        data_path=resolved_data_path,
         tokenizer=tokenizer,
         image_processor=vision_encoder.processor,
-        max_seq_len=MultimodalConfig.MAX_SEQ_LEN
+        max_seq_len=Stage1Config.MAX_SEQ_LEN
     )
-    dataloader = DataLoader(dataset, batch_size=MultimodalConfig.BATCH_SIZE, shuffle=True, drop_last=False)
-    total_opt_steps = (len(dataloader) // MultimodalConfig.GRAD_ACCUM_STEPS) * epochs
-    scheduler = CosineAnnealingLR(optimizer, T_max=max(total_opt_steps, 1), eta_min=MultimodalConfig.MIN_LR)
+    dataloader = DataLoader(dataset, batch_size=Stage1Config.BATCH_SIZE, shuffle=True, drop_last=False)
+    total_opt_steps = (len(dataloader) // Stage1Config.GRAD_ACCUM_STEPS) * epochs
+    scheduler = CosineAnnealingLR(optimizer, T_max=max(total_opt_steps, 1), eta_min=Stage1Config.MIN_LR)
 
-    print(f"[+] Dataset size: {len(dataset)} samples | Batch Size: {MultimodalConfig.BATCH_SIZE} | Epochs: {epochs}")
-    print(f"[+] Effective Batch Size: {MultimodalConfig.BATCH_SIZE * MultimodalConfig.GRAD_ACCUM_STEPS}")
+    print(f"[+] Dataset size: {len(dataset)} samples | Batch Size: {Stage1Config.BATCH_SIZE} | Epochs: {epochs}")
+    print(f"[+] Effective Batch Size: {Stage1Config.BATCH_SIZE * Stage1Config.GRAD_ACCUM_STEPS}")
 
     # 6. Training Loop
-    os.makedirs(MultimodalConfig.DEFAULT_CHECKPOINT_DIR, exist_ok=True)
+    os.makedirs(Stage1Config.DEFAULT_CHECKPOINT_DIR, exist_ok=True)
     global_step = 0
     start_time = time.time()
     optimizer.zero_grad(set_to_none=True)
 
     for epoch in range(epochs):
         epoch_loss = 0.0
-        print(f"\n--- Multimodal Stage {stage} | Epoch {epoch + 1}/{epochs} ---")
+        print(f"\n--- Stage 1 Projector Alignment | Epoch {epoch + 1}/{epochs} ---")
 
         for step, (pixel_values, input_ids, labels) in enumerate(dataloader):
             pixel_values = pixel_values.to(device)
@@ -356,17 +333,17 @@ def train_multimodal(stage: int = 1, data_path: Optional[str] = None, base_check
             if use_amp:
                 with torch.autocast(device_type=device.type, dtype=amp_dtype):
                     loss = trainer.execute_step(pixel_values, input_ids, labels)
-                    loss = loss / MultimodalConfig.GRAD_ACCUM_STEPS
+                    loss = loss / Stage1Config.GRAD_ACCUM_STEPS
             else:
                 loss = trainer.execute_step(pixel_values, input_ids, labels)
-                loss = loss / MultimodalConfig.GRAD_ACCUM_STEPS
+                loss = loss / Stage1Config.GRAD_ACCUM_STEPS
 
             loss.backward()
 
-            if (step + 1) % MultimodalConfig.GRAD_ACCUM_STEPS == 0 or (step + 1) == len(dataloader):
+            if (step + 1) % Stage1Config.GRAD_ACCUM_STEPS == 0 or (step + 1) == len(dataloader):
                 torch.nn.utils.clip_grad_norm_(
-                    list(bridge.projector.parameters()) + (list(model.parameters()) if stage == 2 else []),
-                    max_norm=MultimodalConfig.GRAD_CLIP
+                    bridge.projector.parameters(),
+                    max_norm=Stage1Config.GRAD_CLIP
                 )
                 optimizer.step()
                 scheduler.step()
@@ -376,44 +353,43 @@ def train_multimodal(stage: int = 1, data_path: Optional[str] = None, base_check
                 if device.type == "mps" and global_step % 20 == 0:
                     torch.mps.empty_cache()
 
-                if global_step % MultimodalConfig.EVAL_INTERVAL == 0 or global_step == 1:
-                    curr_loss = loss.item() * MultimodalConfig.GRAD_ACCUM_STEPS
+                if global_step % Stage1Config.EVAL_INTERVAL == 0 or global_step == 1:
+                    curr_loss = loss.item() * Stage1Config.GRAD_ACCUM_STEPS
                     current_lr = scheduler.get_last_lr()[0]
                     elapsed = time.time() - start_time
                     speed = global_step / max(elapsed, 0.001)
                     print(f"Step {global_step:04d} | Loss: {curr_loss:.4f} | LR: {current_lr:.2e} | Speed: {speed:.2f} opt_steps/s")
 
-            epoch_loss += loss.item() * MultimodalConfig.GRAD_ACCUM_STEPS
+            epoch_loss += loss.item() * Stage1Config.GRAD_ACCUM_STEPS
 
         avg_loss = epoch_loss / len(dataloader)
         print(f"Epoch {epoch + 1} Complete | Average Loss: {avg_loss:.4f}")
 
-    # 7. Save Final Multimodal Checkpoint
-    final_out = MultimodalConfig.OUTPUT_FINAL_CHECKPOINT
+    # 7. Save Final Stage 1 Checkpoint
+    final_out = Stage1Config.OUTPUT_STAGE1_CHECKPOINT
     torch.save({
-        "stage": stage,
+        "stage": 1,
         "step": global_step,
         "model_state_dict": model.state_dict(),
         "projector_state_dict": bridge.projector.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "loss": avg_loss,
     }, final_out)
-    print(f"\n[+] Multimodal Training Complete! Checkpoint saved to: {final_out}")
+    print(f"\n[+] Stage 1 Alignment Complete! Checkpoint saved to: {final_out}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Nandi SLM Stage 3 Multimodal Vision-Language Training")
-    parser.add_argument("--stage", type=int, default=1, choices=[1, 2], help="Stage 1: Projector alignment (SLM frozen). Stage 2: Joint fine-tuning.")
-    parser.add_argument("--data_path", type=str, default=None, help="Path to multimodal training JSONL dataset.")
+    parser = argparse.ArgumentParser(description="Nandi SLM Stage 1 Projector Alignment Training")
+    parser.add_argument("--data_path", type=str, default=Stage1Config.DEFAULT_DATA_PATH, help="Path to multimodal training JSONL dataset.")
     parser.add_argument("--base_checkpoint", type=str, default=None, help="Path to base language checkpoint (e.g. nandi_chat_final.pt).")
-    parser.add_argument("--epochs", type=int, default=MultimodalConfig.EPOCHS, help="Number of training epochs.")
+    parser.add_argument("--epochs", type=int, default=Stage1Config.EPOCHS, help="Number of training epochs.")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate override.")
     args = parser.parse_args()
 
-    train_multimodal(
-        stage=args.stage,
+    train_stage1(
         data_path=args.data_path,
         base_checkpoint=args.base_checkpoint,
         epochs=args.epochs,
         lr=args.lr
     )
+

@@ -129,13 +129,15 @@ Train the SigLIP vision bridge and multimodal reasoning capabilities on images:
 
 ```bash
 # Stage 3A: Alignment warmup (SLM backbone frozen, train MLP Projector only)
-python3 training/trainingMultimodalNandi.py --stage 1
+python3 training/stage1AlignmentNandi.py
 
 # Stage 3B: End-to-end multimodal fine-tuning (Joint SLM + Projector training)
-python3 training/trainingMultimodalNandi.py --stage 2
+python3 training/stage2MultimodalNandi.py
 ```
 
-Final multimodal weights are saved to `model_artifacts/checkpoints/nandi_vision_final.pt`.
+Checkpoints:
+- Stage 1 outputs to `model_artifacts/checkpoints/nandi_stage1_projector.pt`
+- Stage 2 outputs final weights to `model_artifacts/checkpoints/nandi_vision_final.pt`
 
 ### 8. End-to-End Testing & Verification
 

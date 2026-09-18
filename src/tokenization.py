@@ -61,23 +61,13 @@ if __name__ == "__main__":
     else:
         tokenizer.load()
     test_texts = [
-       "Mothership",
-    "Middleman Protocol",
-    "EnvironmentMatrix",
-    "AdapterTransformation",
-    "Fast Decision Node",
-    "Guardrail Failure Engine",
-    "Actuator Dispatch",
-    "reinforcement learning",
-    "control policy",
-    "state representation",
-    "reward function",
-    "model predictive control",
-    "CPO",
-    "TD3",
-    "SAC",
-    "IQN",
-    "RND",
+       "Boy",
+       "Girl",
+       "Happy",
+       "Environment",
+       "Door",
+       "Banana",
+       "Car"
     ]
     for text in test_texts:
         encoded = tokenizer.encode(text)

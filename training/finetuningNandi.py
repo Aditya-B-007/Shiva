@@ -29,15 +29,15 @@ class SFTConfig:
     MAX_SEQ_LEN = 512 
     
     # Fine-Tuning Hyperparameters
-    BATCH_SIZE = 4
+    BATCH_SIZE = 8
     GRAD_ACCUM_STEPS = 4 
-    LEARNING_RATE = 1e-4
-    MIN_LR = 1e-5
-    WEIGHT_DECAY = 0.01
+    LEARNING_RATE = 3e-4
+    MIN_LR = 3e-5
+    WEIGHT_DECAY = 0.05
     GRAD_CLIP = 1.0
-    EPOCHS = 3 
-    EVAL_INTERVAL = 25
-    SAVE_INTERVAL = 100
+    EPOCHS = 10 
+    EVAL_INTERVAL = 100
+    SAVE_INTERVAL = 250
 
 class NandiQADataset(Dataset):
     def __init__(self, jsonl_path, tokenizer, max_seq_len=512):
