@@ -138,24 +138,30 @@ HTML_PAGE = """<!DOCTYPE html>
   #img-preview { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
   .tag { font-size: 0.85rem; color: #ffb86c; font-weight: 500; }
   .remove-img { color: #ff5555; cursor: pointer; margin-left: auto; font-weight: bold; }
+  .teach-btn { display: inline-block; margin-top: 8px; font-size: 0.8rem; color: #888; cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0; }
+  .teach-btn:hover { color: #ccc; }
+  .teach-box { margin-top: 10px; padding: 10px; background: #222; border: 1px solid #444; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .teach-input { width: 100%; padding: 8px 12px; background: #2f2f2f; border: 1px solid #555; border-radius: 6px; color: #fff; outline: none; font-size: 0.9rem; }
+  .teach-submit-btn { align-self: flex-end; background: #444; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+  .teach-submit-btn:hover { background: #555; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🦬 Nandi SLM</h1>
+  <h1>Nandi SLM</h1>
   <span class="badge">nandi2 text+image</span>
 </header>
 <div id="chat-container">
-  <div class="msg assistant">👋 Hello! I am Nandi SLM. You can chat with me, or click <b>📎 Image</b> to upload a photo for pure image recognition (Note: if an image is uploaded, text input is locked).</div>
+  <div class="msg assistant">Hello! I am Nandi SLM. You can chat with me, or click <b>Image</b> to upload a photo for pure image recognition.</div>
 </div>
 <div id="input-container">
   <div id="img-preview-bar">
     <img id="img-preview" src="">
-    <span class="tag">⚠️ Image attached: Text input locked for pure image recognition.</span>
-    <span class="remove-img" onclick="clearImage()">✕ Remove</span>
+    <span class="tag">Image attached: Text input locked for pure image recognition.</span>
+    <span class="remove-img" onclick="clearImage()">Remove</span>
   </div>
   <div class="input-box">
-    <label class="upload-btn" for="file-input">📎 Image</label>
+    <label class="upload-btn" for="file-input">Image</label>
     <input type="file" id="file-input" accept="image/*" onchange="handleImageSelect(event)">
     <input type="text" id="text-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter') send()">
     <button class="btn" id="send-btn" onclick="send()">Send</button>
@@ -163,6 +169,9 @@ HTML_PAGE = """<!DOCTYPE html>
 </div>
 <script>
 let currentImageBase64 = null;
+let turnHistory = {};
+let turnCounter = 0;
+
 function handleImageSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -174,11 +183,12 @@ function handleImageSelect(e) {
     const textInput = document.getElementById("text-input");
     textInput.value = "";
     textInput.disabled = true;
-    textInput.placeholder = "Image attached (no text allowed). Click Recognize ->";
+    textInput.placeholder = "Image attached. Click Recognize to continue.";
     document.getElementById("send-btn").innerText = "Recognize";
   };
   reader.readAsDataURL(file);
 }
+
 function clearImage() {
   currentImageBase64 = null;
   document.getElementById("file-input").value = "";
@@ -188,23 +198,100 @@ function clearImage() {
   textInput.placeholder = "Type a message...";
   document.getElementById("send-btn").innerText = "Send";
 }
+
+function openTeachBox(turnId) {
+  const container = document.getElementById("teach-container-" + turnId);
+  if (!container) return;
+  container.style.display = (container.style.display === "none" || !container.style.display) ? "flex" : "none";
+}
+
+async function submitCorrection(turnId) {
+  const inputEl = document.getElementById("teach-input-" + turnId);
+  const correctedResponse = inputEl ? inputEl.value.trim() : "";
+  if (!correctedResponse) return;
+
+  const btnEl = document.getElementById("teach-submit-btn-" + turnId);
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerText = "Learning...";
+  }
+
+  const turnData = turnHistory[turnId] || {};
+  const payload = {
+    prompt: turnData.prompt || "User input",
+    corrected_response: correctedResponse,
+    thought: "Clear, accurate, and helpful response.",
+    image: turnData.image || null
+  };
+
+  try {
+    const res = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      throw new Error("HTTP error " + res.status);
+    }
+    const data = await res.json();
+    console.log("Feedback recorded:", data);
+
+    const toggleBtn = document.getElementById("teach-toggle-" + turnId);
+    if (toggleBtn) {
+      toggleBtn.innerText = "Learned (Loss: " + (data.loss ? data.loss.toFixed(3) : "OK") + ")";
+      toggleBtn.style.color = "#4caf50";
+      toggleBtn.disabled = true;
+    }
+    const container = document.getElementById("teach-container-" + turnId);
+    if (container) container.style.display = "none";
+  } catch (err) {
+    console.error("Failed to submit feedback:", err);
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerText = "Retry Teach";
+    }
+  }
+}
+
 async function send() {
   const chat = document.getElementById("chat-container");
   const sendBtn = document.getElementById("send-btn");
+  turnCounter++;
+  const thisTurn = turnCounter;
+
   if (currentImageBase64) {
     const imgData = currentImageBase64;
+    const promptText = "Describe what is happening in this picture: <image>";
+    turnHistory[thisTurn] = { prompt: promptText, image: imgData };
+
     chat.innerHTML += `<div class="msg user"><img src="${imgData}"><br><i>[Image Recognition Request]</i></div>`;
     clearImage();
     sendBtn.disabled = true;
     chat.scrollTop = chat.scrollHeight;
 
-    const res = await fetch("/api/recognize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: imgData })
-    });
-    const data = await res.json();
-    chat.innerHTML += `<div class="msg assistant">${data.text || "[No description generated]"}</div>`;
+    try {
+      const res = await fetch("/api/recognize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: imgData })
+      });
+      const data = await res.json();
+      const botText = data.text || "[No description generated]";
+
+      chat.innerHTML += `
+        <div class="msg assistant">
+          <div>${botText}</div>
+          <button id="teach-toggle-${thisTurn}" class="teach-btn" onclick="openTeachBox(${thisTurn})">Teach Nandi</button>
+          <div id="teach-container-${thisTurn}" class="teach-box" style="display:none;">
+            <input id="teach-input-${thisTurn}" class="teach-input" type="text" placeholder="Enter the correct description...">
+            <button id="teach-submit-btn-${thisTurn}" class="teach-submit-btn" onclick="submitCorrection(${thisTurn})">Teach</button>
+          </div>
+        </div>`;
+    } catch (err) {
+      chat.innerHTML += `<div class="msg assistant" style="color:#ff5555;">Error contacting server: ${err.message}</div>`;
+    }
+
     sendBtn.disabled = false;
     chat.scrollTop = chat.scrollHeight;
   } else {
@@ -212,17 +299,35 @@ async function send() {
     const text = textInput.value.trim();
     if (!text) return;
     textInput.value = "";
+
+    turnHistory[thisTurn] = { prompt: text, image: null };
+
     chat.innerHTML += `<div class="msg user">${text}</div>`;
     sendBtn.disabled = true;
     chat.scrollTop = chat.scrollHeight;
 
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: text })
-    });
-    const data = await res.json();
-    chat.innerHTML += `<div class="msg assistant">${data.text || "[No response]"}</div>`;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      });
+      const data = await res.json();
+      const botText = data.text || "[No response]";
+
+      chat.innerHTML += `
+        <div class="msg assistant">
+          <div>${botText}</div>
+          <button id="teach-toggle-${thisTurn}" class="teach-btn" onclick="openTeachBox(${thisTurn})">Teach Nandi</button>
+          <div id="teach-container-${thisTurn}" class="teach-box" style="display:none;">
+            <input id="teach-input-${thisTurn}" class="teach-input" type="text" placeholder="Enter what Nandi should have said...">
+            <button id="teach-submit-btn-${thisTurn}" class="teach-submit-btn" onclick="submitCorrection(${thisTurn})">Teach</button>
+          </div>
+        </div>`;
+    } catch (err) {
+      chat.innerHTML += `<div class="msg assistant" style="color:#ff5555;">Error contacting server: ${err.message}</div>`;
+    }
+
     sendBtn.disabled = false;
     chat.scrollTop = chat.scrollHeight;
   }

@@ -14,11 +14,12 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-
+from typing import Optional
 from src.tokenization import TokenizerNandi
 from src.transformer import TransformerModel
 from src.imageRecognitionForNandi import VisionEncoder, MLPProjector, VisionBridge
 from src.dataIngestionPipeline import TokenSplicer, MultimodalInputBatch
+from src.continousLearningFromHumanFeedback import LiveLearner
 from src.config import default_model_config, HTML_PAGE
 
 
@@ -34,6 +35,13 @@ class ChatRequest(BaseModel):
 
 class RecognizeRequest(BaseModel):
     image: str
+
+
+class FeedbackRequest(BaseModel):
+    prompt: str
+    corrected_response: str
+    thought: Optional[str] = None
+    image: Optional[str] = None
 
 
 def get_device():
@@ -96,6 +104,17 @@ def load_nandi():
     model.eval()
     bridge.eval()
 
+    live_learner = LiveLearner(
+        languageModel=model,
+        visionBridge=bridge,
+        visionEncoder=vision_encoder,
+        tokenSplicer=splicer,
+        tokenizer=tokenizer,
+        imageTokenIdentifier=image_token_id,
+        executionDevice=device,
+        learningRate=1e-5
+    )
+
     state["model"] = model
     state["bridge"] = bridge
     state["vision_encoder"] = vision_encoder
@@ -103,6 +122,7 @@ def load_nandi():
     state["tokenizer"] = tokenizer
     state["image_token_id"] = image_token_id
     state["device"] = device
+    state["live_learner"] = live_learner
 
 
 @app.on_event("startup")
@@ -113,6 +133,35 @@ def startup_event():
 @app.get("/", response_class=HTMLResponse)
 def get_ui():
     return HTML_PAGE
+
+
+@app.post("/api/feedback")
+@app.post("/feedback")
+def handle_feedback(req: FeedbackRequest):
+    live_learner: LiveLearner = state["live_learner"]
+    user_prompt = req.prompt.strip()
+    corrected_response = req.corrected_response.strip()
+    thought = (req.thought or "Clear, accurate, and helpful response.").strip()
+
+    if req.image:
+        img_data = req.image
+        if "," in img_data:
+            img_data = img_data.split(",", 1)[1]
+        raw_bytes = base64.b64decode(img_data)
+        result = live_learner.executeLiveMultimodalLearningStep(
+            rawImageBytes=raw_bytes,
+            userPrompt=user_prompt if user_prompt else "Describe what is happening in this picture: <image>",
+            correctedResponse=corrected_response,
+            reasoningThought=thought
+        )
+    else:
+        result = live_learner.executeLiveTextLearningStep(
+            userPrompt=user_prompt,
+            correctedResponse=corrected_response,
+            reasoningThought=thought
+        )
+
+    return result
 
 
 @app.post("/api/chat")
