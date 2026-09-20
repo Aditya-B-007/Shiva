@@ -11,49 +11,20 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.tokenization import TokenizerNandi
 from src.transformer import TransformerModel
 from src.dataIngestionPipeline import get_data_loader
-from src.config import default_model_config, default_train_config
-
-class TrainConfig:
-    CORPUS_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "data.txt"))
-    CHECKPOINT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
-    NINP = default_model_config.ninp           
-    NHEAD = default_model_config.nhead
-    N_KV_HEADS = default_model_config.n_kv_heads
-    NHID = default_model_config.nhid          
-    NLAYERS = default_model_config.nlayers        
-    DROPOUT = default_model_config.dropout
-    MAX_SEQ_LEN = default_model_config.max_seq_len    
-    BATCH_SIZE = default_train_config.batch_size      
-    GRAD_ACCUM_STEPS = default_train_config.grad_accum_steps 
-    STRIDE = default_train_config.stride
-    LEARNING_RATE = default_train_config.learning_rate
-    MIN_LR = default_train_config.min_lr
-    WEIGHT_DECAY = default_train_config.weight_decay
-    GRAD_CLIP = default_train_config.grad_clip
-    EPOCHS = default_train_config.epochs         
-    EVAL_INTERVAL = default_train_config.eval_interval
-    SAVE_INTERVAL = default_train_config.save_interval
+from src.config import default_model_config, default_train_config, getDeviceAndDtype
 
 
-def get_device_and_dtype():
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-        use_amp = True
-        amp_dtype = torch.bfloat16
-        print(">> Running on Apple Silicon Metal Performance Shaders (MPS) with AMP acceleration!")
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
-        use_amp = True
-        amp_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-    else:
-        device = torch.device("cpu")
-        use_amp = False
-        amp_dtype = torch.float32
-        print(">> Running on CPU.")
-    return device, use_amp, amp_dtype
+# =============================================================================
+# Paths (stage-specific; all numerics come from default_train_config)
+# =============================================================================
+
+CORPUS_PATH    = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "data.txt"))
+CHECKPOINT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
+
 
 def train():
-    device, use_amp, amp_dtype = get_device_and_dtype()
+    cfg = default_train_config
+    device, use_amp, amp_dtype = getDeviceAndDtype()
     print(f"Starting Training for Nandi SLM on Device: {device}")
 
     tokenizer = TokenizerNandi()
@@ -62,76 +33,77 @@ def train():
         sys.exit(1)
     tokenizer.load()
     if tokenizer.tokenizer.token_to_id("<image>") is None:
-        tokenizer.add_special_tokens(["<image>"])
-    vocab_size = tokenizer.get_vocab_size()
+        tokenizer.addSpecialTokens(["<image>"])
+    vocab_size = tokenizer.getVocabSize()
     print(f"Loaded Tokenizer with Vocab Size: {vocab_size:,}")
 
     model = TransformerModel(
         ntoken=vocab_size,
-        ninp=TrainConfig.NINP,
-        nhead=TrainConfig.NHEAD,
-        n_kv_heads=TrainConfig.N_KV_HEADS,
-        nhid=TrainConfig.NHID,
-        nlayers=TrainConfig.NLAYERS,
-        dropout=TrainConfig.DROPOUT,
-        max_seq_len=TrainConfig.MAX_SEQ_LEN
+        ninp=default_model_config.ninp,
+        nhead=default_model_config.nhead,
+        n_kv_heads=default_model_config.n_kv_heads,
+        nhid=default_model_config.nhid,
+        nlayers=default_model_config.nlayers,
+        dropout=default_model_config.dropout,
+        max_seq_len=default_model_config.max_seq_len
     ).to(device)
 
     unique_params = set(model.parameters())
     total_params = sum(p.numel() for p in unique_params)
     print(f"Model Parameters: {total_params:,} ({total_params / 1e6:.2f} Million)")
 
-    print(f"Building DataLoader from: {TrainConfig.CORPUS_PATH}...")
+    print(f"Building DataLoader from: {CORPUS_PATH}...")
     dataloader = get_data_loader(
-        corpus_path=TrainConfig.CORPUS_PATH,
+        corpus_path=CORPUS_PATH,
         tokenizer=tokenizer,
-        batch_size=TrainConfig.BATCH_SIZE,
-        max_length=TrainConfig.MAX_SEQ_LEN,
-        stride=TrainConfig.STRIDE,
+        batch_size=cfg.batch_size,
+        max_length=default_model_config.max_seq_len,
+        stride=cfg.stride,
         shuffle=True
     )
-    total_optimizer_steps = (len(dataloader) // TrainConfig.GRAD_ACCUM_STEPS) * TrainConfig.EPOCHS
+    total_optimizer_steps = (len(dataloader) // cfg.grad_accum_steps) * cfg.epochs
     print(f"Batches per Epoch: {len(dataloader):,}")
-    print(f"Effective Batch Size: {TrainConfig.BATCH_SIZE * TrainConfig.GRAD_ACCUM_STEPS}")
+    print(f"Effective Batch Size: {cfg.batch_size * cfg.grad_accum_steps}")
     print(f"Total Optimizer Steps: {total_optimizer_steps:,}")
 
     optimizer = AdamW(
         model.parameters(),
-        lr=TrainConfig.LEARNING_RATE,
+        lr=cfg.learning_rate,
         betas=(0.9, 0.95),
-        weight_decay=TrainConfig.WEIGHT_DECAY
+        weight_decay=cfg.weight_decay
     )
-    scheduler = CosineAnnealingLR(optimizer, T_max=total_optimizer_steps, eta_min=TrainConfig.MIN_LR)
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_optimizer_steps, eta_min=cfg.min_lr)
     criterion = nn.CrossEntropyLoss()
 
-    os.makedirs(TrainConfig.CHECKPOINT_DIR, exist_ok=True)
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
     global_step = 0
     start_time = time.time()
     model.train()
     optimizer.zero_grad(set_to_none=True)
 
-    for epoch in range(TrainConfig.EPOCHS):
+    for epoch in range(cfg.epochs):
         epoch_loss = 0.0
-        print(f"\n--- Epoch {epoch + 1}/{TrainConfig.EPOCHS} ---")
+        print(f"\n--- Epoch {epoch + 1}/{cfg.epochs} ---")
 
         for step, (inputs, targets) in enumerate(dataloader):
             inputs = inputs.to(device)
             targets = targets.to(device)
+
             if use_amp:
                 with torch.autocast(device_type=device.type, dtype=amp_dtype):
                     logits = model(inputs)
                     loss = criterion(logits.view(-1, vocab_size), targets.view(-1))
-                    loss = loss / TrainConfig.GRAD_ACCUM_STEPS
+                    loss = loss / cfg.grad_accum_steps
             else:
                 logits = model(inputs)
                 loss = criterion(logits.view(-1, vocab_size), targets.view(-1))
-                loss = loss / TrainConfig.GRAD_ACCUM_STEPS
+                loss = loss / cfg.grad_accum_steps
 
             loss.backward()
 
-            if (step + 1) % TrainConfig.GRAD_ACCUM_STEPS == 0 or (step + 1) == len(dataloader):
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=TrainConfig.GRAD_CLIP)
+            if (step + 1) % cfg.grad_accum_steps == 0 or (step + 1) == len(dataloader):
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.grad_clip)
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -140,29 +112,29 @@ def train():
                 if device.type == "mps" and global_step % 50 == 0:
                     torch.mps.empty_cache()
 
-                if global_step % TrainConfig.EVAL_INTERVAL == 0:
+                if global_step % cfg.eval_interval == 0:
                     current_lr = scheduler.get_last_lr()[0]
                     elapsed = time.time() - start_time
                     steps_per_sec = global_step / elapsed
-                    curr_loss = loss.item() * TrainConfig.GRAD_ACCUM_STEPS
+                    curr_loss = loss.item() * cfg.grad_accum_steps
                     print(f"Step {global_step:05d}/{total_optimizer_steps:05d} | Loss: {curr_loss:.4f} | LR: {current_lr:.2e} | Speed: {steps_per_sec:.2f} opt_steps/s")
 
-                if global_step % TrainConfig.SAVE_INTERVAL == 0:
-                    checkpoint_path = os.path.join(TrainConfig.CHECKPOINT_DIR, f"nandi_step_{global_step}.pt")
+                if global_step % cfg.save_interval == 0:
+                    checkpoint_path = os.path.join(CHECKPOINT_DIR, f"nandi_step_{global_step}.pt")
                     torch.save({
                         "step": global_step,
                         "model_state_dict": model.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict(),
-                        "loss": loss.item() * TrainConfig.GRAD_ACCUM_STEPS,
+                        "loss": loss.item() * cfg.grad_accum_steps,
                     }, checkpoint_path)
                     print(f">> Saved Checkpoint: {checkpoint_path}")
 
-            epoch_loss += loss.item() * TrainConfig.GRAD_ACCUM_STEPS
+            epoch_loss += loss.item() * cfg.grad_accum_steps
 
         avg_epoch_loss = epoch_loss / len(dataloader)
         print(f"Epoch {epoch + 1} Complete | Average Loss: {avg_epoch_loss:.4f}")
 
-    final_path = os.path.join(TrainConfig.CHECKPOINT_DIR, "nandi_final.pt")
+    final_path = os.path.join(CHECKPOINT_DIR, "nandi_final.pt")
     torch.save({
         "step": global_step,
         "model_state_dict": model.state_dict(),
@@ -170,6 +142,7 @@ def train():
         "loss": avg_epoch_loss,
     }, final_path)
     print(f"\nTraining Complete! Final model weights saved to: {final_path}")
+
 
 if __name__ == "__main__":
     train()

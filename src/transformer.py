@@ -2,27 +2,43 @@
 import torch
 import torch.nn as nn
 import math
+from typing import Optional
+
 try:
-    from src.config import default_model_config
+    from src.interfaces import ITextGenerator
+    from src.config import (
+        default_model_config,
+        ROPE_BASE,
+        MAX_GENERATE_CONTEXT,
+        REPETITION_PENALTY_WINDOW,
+        TEMPERATURE_EPSILON,
+    )
 except (ImportError, ModuleNotFoundError):
-    from config import default_model_config
+    from interfaces import ITextGenerator
+    from config import (
+        default_model_config,
+        ROPE_BASE,
+        MAX_GENERATE_CONTEXT,
+        REPETITION_PENALTY_WINDOW,
+        TEMPERATURE_EPSILON,
+    )
 #=============================================================
 
 #=============Mathematic execution functions==================
-def rotate_half(x):
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
+def rotate_half(tensor):
+    x1 = tensor[..., : tensor.shape[-1] // 2]
+    x2 = tensor[..., tensor.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
 
-def apply_rotary_pos_emb(x, cos, sin):
-    return (x * cos) + (rotate_half(x) * sin)
+def apply_rotary_pos_emb(queryOrKey, cos, sin):
+    return (queryOrKey * cos) + (rotate_half(queryOrKey) * sin)
 
-def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+def repeat_kv(kvTensor: torch.Tensor, n_rep: int) -> torch.Tensor:
     if n_rep == 1:
-        return x
-    b, n_kv_heads, s, head_dim = x.shape
+        return kvTensor
+    b, n_kv_heads, s, head_dim = kvTensor.shape
     return (
-        x[:, :, None, :, :]
+        kvTensor[:, :, None, :, :]
         .expand(b, n_kv_heads, n_rep, s, head_dim)
         .reshape(b, n_kv_heads * n_rep, s, head_dim)
     )
@@ -39,13 +55,13 @@ def build_prefix_causal_mask(total_len: int, prefix_len: int, device: torch.devi
 #==============================================================
 
 #===================RoPE and GQA implementation========================
-class RotaryEmbedding(nn.Module):
-    def __init__(self, dim, max_seq_len=8192, base=10000.0):
+class RoPEEmbedding(nn.Module):
+    def __init__(self, dim, max_seq_len=8192, base=ROPE_BASE):
         super().__init__()
         self.dim = dim
         self.max_seq_len = max_seq_len
         self.base = base
-        
+
         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self._set_cos_sin_cache(max_seq_len)
@@ -58,12 +74,12 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("cos_cached", emb.cos()[None, None, :, :], persistent=False)
         self.register_buffer("sin_cached", emb.sin()[None, None, :, :], persistent=False)
 
-    def forward(self, x, seq_len):
+    def forward(self, tensor, seq_len):
         if seq_len > self.max_seq_len:
             self._set_cos_sin_cache(seq_len)
         return (
-            self.cos_cached[:, :, :seq_len, :].to(dtype=x.dtype, device=x.device),
-            self.sin_cached[:, :, :seq_len, :].to(dtype=x.dtype, device=x.device),
+            self.cos_cached[:, :, :seq_len, :].to(dtype=tensor.dtype, device=tensor.device),
+            self.sin_cached[:, :, :seq_len, :].to(dtype=tensor.dtype, device=tensor.device),
         )
 
 #=======================Attention Mechanisms========================
@@ -84,12 +100,17 @@ class CausalSelfAttention(nn.Module):
 class GroupedQueryAttention(nn.Module):
     def __init__(
         self,
-        d_model=default_model_config.ninp,
-        nhead=default_model_config.nhead,
-        n_kv_heads=default_model_config.n_kv_heads,
-        dropout=default_model_config.dropout
+        d_model=None,
+        nhead=None,
+        n_kv_heads=None,
+        dropout=None
     ):
         super().__init__()
+        d_model = d_model if d_model is not None else default_model_config.ninp
+        nhead = nhead if nhead is not None else default_model_config.nhead
+        n_kv_heads = n_kv_heads if n_kv_heads is not None else default_model_config.n_kv_heads
+        dropout = dropout if dropout is not None else default_model_config.dropout
+
         assert d_model % nhead == 0, f"d_model ({d_model}) must be divisible by nhead ({nhead})"
         assert nhead % n_kv_heads == 0, f"nhead ({nhead}) must be divisible by n_kv_heads ({n_kv_heads})"
         self.d_model = d_model
@@ -142,13 +163,19 @@ class GroupedQueryAttention(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(
         self,
-        d_model=default_model_config.ninp,
-        nhead=default_model_config.nhead,
-        n_kv_heads=default_model_config.n_kv_heads,
-        nhid=default_model_config.nhid,
-        dropout=default_model_config.dropout
+        d_model=None,
+        nhead=None,
+        n_kv_heads=None,
+        nhid=None,
+        dropout=None
     ):
         super().__init__()
+        d_model = d_model if d_model is not None else default_model_config.ninp
+        nhead = nhead if nhead is not None else default_model_config.nhead
+        n_kv_heads = n_kv_heads if n_kv_heads is not None else default_model_config.n_kv_heads
+        nhid = nhid if nhid is not None else default_model_config.nhid
+        dropout = dropout if dropout is not None else default_model_config.dropout
+
         self.ln_1 = nn.LayerNorm(d_model)
         self.attn = GroupedQueryAttention(d_model=d_model, nhead=nhead, n_kv_heads=n_kv_heads, dropout=dropout)
         self.ln_2 = nn.LayerNorm(d_model)
@@ -167,16 +194,25 @@ class TransformerBlock(nn.Module):
 class TransformerModel(nn.Module):
     def __init__(
         self,
-        ntoken=default_model_config.ntoken,
-        ninp=default_model_config.ninp,
-        nhead=default_model_config.nhead,
-        n_kv_heads=default_model_config.n_kv_heads,
-        nhid=default_model_config.nhid,
-        nlayers=default_model_config.nlayers,
-        dropout=default_model_config.dropout,
-        max_seq_len=default_model_config.max_seq_len
+        ntoken=None,
+        ninp=None,
+        nhead=None,
+        n_kv_heads=None,
+        nhid=None,
+        nlayers=None,
+        dropout=None,
+        max_seq_len=None
     ):
         super(TransformerModel, self).__init__()
+        ntoken = ntoken if ntoken is not None else default_model_config.ntoken
+        ninp = ninp if ninp is not None else default_model_config.ninp
+        nhead = nhead if nhead is not None else default_model_config.nhead
+        n_kv_heads = n_kv_heads if n_kv_heads is not None else default_model_config.n_kv_heads
+        nhid = nhid if nhid is not None else default_model_config.nhid
+        nlayers = nlayers if nlayers is not None else default_model_config.nlayers
+        dropout = dropout if dropout is not None else default_model_config.dropout
+        max_seq_len = max_seq_len if max_seq_len is not None else default_model_config.max_seq_len
+
         self.model_type = 'Transformer'
         self.ninp = ninp
         self.ntoken = ntoken
@@ -184,7 +220,7 @@ class TransformerModel(nn.Module):
         self.n_kv_heads = n_kv_heads
 
         self.encoder = nn.Embedding(ntoken, ninp)
-        self.rotary_emb = RotaryEmbedding(dim=ninp // nhead, max_seq_len=max_seq_len)
+        self.rotary_emb = RoPEEmbedding(dim=ninp // nhead, max_seq_len=max_seq_len)
         self.dropout = nn.Dropout(dropout)
 
         self.layers = nn.ModuleList([
@@ -193,8 +229,9 @@ class TransformerModel(nn.Module):
         ])
         self.norm = nn.LayerNorm(ninp)
         self.decoder = nn.Linear(ninp, ntoken, bias=False)
-        self.decoder.weight = self.encoder.weight #Weight tying between the encoder and decoder to reduce the number of parameters and improve generalization.
+        self.decoder.weight = self.encoder.weight  # Weight tying: reduces parameters and improves generalisation.
 
+        self._generator: Optional[TextGenerator] = None
         self._init_weights()
 
     def _init_weights(self):
@@ -263,79 +300,101 @@ class TransformerModel(nn.Module):
         repetition_penalty=1.2,
         eos_token_id=None
     ):
-        if idx is None and inputs_embeds is None:
-            raise ValueError("Either idx or inputs_embeds must be provided to generate")
+        if self._generator is None:
+            self._generator = TextGenerator(self)
 
-        if inputs_embeds is not None and prefix_len == 0:
-            prefix_len = inputs_embeds.size(1)
-
-        generated_ids = []
-        generated_tokens = None
-        current_embeds = inputs_embeds
-        current_idx = idx
-
-        for _ in range(max_new_tokens):
-            if current_embeds is not None:
-                max_ctx = self.rotary_emb.max_seq_len
-                cond_embeds = current_embeds if current_embeds.size(1) <= max_ctx else current_embeds[:, -max_ctx:]
-                logits = self(inputs_embeds=cond_embeds, prefix_len=prefix_len)
-            else:
-                idx_cond = current_idx if current_idx.size(1) <= 8192 else current_idx[:, -8192:]
-                logits = self(src=idx_cond, prefix_len=0)
-
-            logits = logits[:, -1, :] / max(temperature, 1e-5)
-            if repetition_penalty != 1.0 and (current_idx is not None or generated_ids):
-                penalty_tokens = set(current_idx[0, -64:].tolist()) if current_idx is not None else set(generated_ids[-64:])
-                for b in range(logits.size(0)):
-                    for token_id in penalty_tokens:
-                        if logits[b, token_id] > 0:
-                            logits[b, token_id] /= repetition_penalty
-                        else:
-                            logits[b, token_id] *= repetition_penalty
-
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
-            if top_p is not None and top_p < 1.0:
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
-                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                logits[indices_to_remove] = -float('Inf')
-
-            probs = torch.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
-
-            generated_ids.append(idx_next.item() if idx_next.numel() == 1 else idx_next[0, 0].item())
-
-            if eos_token_id is not None and (idx_next == eos_token_id).all():
-                break
-
-            if current_embeds is not None:
-                generated_tokens = idx_next if generated_tokens is None else torch.cat((generated_tokens, idx_next), dim=1)
-                next_embed = self.encoder(idx_next) * math.sqrt(self.ninp)
-                current_embeds = torch.cat((current_embeds, next_embed), dim=1)
-            else:
-                current_idx = torch.cat((current_idx, idx_next), dim=1)
-
-        if idx is not None:
-            return current_idx
-        else:
-            return generated_tokens if generated_tokens is not None else torch.empty((inputs_embeds.size(0), 0), dtype=torch.long, device=inputs_embeds.device)
+        return self._generator.generateTokens(
+            tokenIndices=idx,
+            inputsEmbeds=inputs_embeds,
+            prefixLength=prefix_len,
+            maxNewTokens=max_new_tokens,
+            temperature=temperature,
+            topK=top_k,
+            topP=top_p,
+            repetitionPenalty=repetition_penalty,
+            eosTokenId=eos_token_id
+        )
 
 #===============================================================
 
+#===================Decoupled Text Generator====================
+class TextGenerator(ITextGenerator):
+    def __init__(self, languageModel: TransformerModel):
+        self.languageModel = languageModel
 
-#=======================Testing the model========================
+    @torch.no_grad()
+    def generateTokens(
+        self,
+        tokenIndices: Optional[torch.Tensor] = None,
+        inputsEmbeds: Optional[torch.Tensor] = None,
+        prefixLength: int = 0,
+        maxNewTokens: int = 250,
+        temperature: float = 0.5,
+        topK: int = 30,
+        topP: float = 0.85,
+        repetitionPenalty: float = 1.2,
+        eosTokenId: Optional[int] = None
+    ) -> torch.Tensor:
+        if tokenIndices is None and inputsEmbeds is None:
+            raise ValueError("Either tokenIndices or inputsEmbeds must be provided to generateTokens")
 
-if __name__ == "__main__":
-    model = TransformerModel()
-    unique_params = set(model.parameters())
-    total_params = sum(p.numel() for p in unique_params)
-    trainable_params = sum(p.numel() for p in unique_params if p.requires_grad)
-    print(f"Total Parameters (unique):     {total_params:,}")
-    dummy_input = torch.randint(0, model.ntoken, (4, 32)) 
-    dummy_output = model(dummy_input)
-    print(f"Output shape: {dummy_output.shape}")
+        if inputsEmbeds is not None and prefixLength == 0:
+            prefixLength = inputsEmbeds.size(1)
+
+        generatedIds = []
+        generatedTokens = None
+        currentEmbeds = inputsEmbeds
+        currentIdx = tokenIndices
+
+        for _ in range(maxNewTokens):
+            if currentEmbeds is not None:
+                maxCtx = self.languageModel.rotary_emb.max_seq_len
+                condEmbeds = currentEmbeds if currentEmbeds.size(1) <= maxCtx else currentEmbeds[:, -maxCtx:]
+                logits = self.languageModel(inputs_embeds=condEmbeds, prefix_len=prefixLength)
+            else:
+                idxCond = currentIdx if currentIdx.size(1) <= MAX_GENERATE_CONTEXT else currentIdx[:, -MAX_GENERATE_CONTEXT:]
+                logits = self.languageModel(src=idxCond, prefix_len=0)
+
+            logits = logits[:, -1, :] / max(temperature, TEMPERATURE_EPSILON)
+            if repetitionPenalty != 1.0 and (currentIdx is not None or generatedIds):
+                penaltyTokens = set(currentIdx[0, -REPETITION_PENALTY_WINDOW:].tolist()) if currentIdx is not None else set(generatedIds[-REPETITION_PENALTY_WINDOW:])
+                for b in range(logits.size(0)):
+                    for tokenId in penaltyTokens:
+                        if logits[b, tokenId] > 0:
+                            logits[b, tokenId] /= repetitionPenalty
+                        else:
+                            logits[b, tokenId] *= repetitionPenalty
+
+            if topK is not None:
+                v, _ = torch.topk(logits, min(topK, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+            if topP is not None and topP < 1.0:
+                sortedLogits, sortedIndices = torch.sort(logits, descending=True)
+                cumulativeProbs = torch.cumsum(torch.softmax(sortedLogits, dim=-1), dim=-1)
+                sortedIndicesToRemove = cumulativeProbs > topP
+                sortedIndicesToRemove[..., 1:] = sortedIndicesToRemove[..., :-1].clone()
+                sortedIndicesToRemove[..., 0] = 0
+                indicesToRemove = sortedIndicesToRemove.scatter(1, sortedIndices, sortedIndicesToRemove)
+                logits[indicesToRemove] = -float('Inf')
+
+            probs = torch.softmax(logits, dim=-1)
+            idxNext = torch.multinomial(probs, num_samples=1)
+
+            generatedIds.append(idxNext.item() if idxNext.numel() == 1 else idxNext[0, 0].item())
+
+            if eosTokenId is not None and (idxNext == eosTokenId).all():
+                break
+
+            if currentEmbeds is not None:
+                generatedTokens = idxNext if generatedTokens is None else torch.cat((generatedTokens, idxNext), dim=1)
+                nextEmbed = self.languageModel.encoder(idxNext) * math.sqrt(self.languageModel.ninp)
+                currentEmbeds = torch.cat((currentEmbeds, nextEmbed), dim=1)
+            else:
+                currentIdx = torch.cat((currentIdx, idxNext), dim=1)
+
+        if tokenIndices is not None:
+            return currentIdx
+        else:
+            return generatedTokens if generatedTokens is not None else torch.empty((inputsEmbeds.size(0), 0), dtype=torch.long, device=inputsEmbeds.device)
+
+#===============================================================

@@ -6,6 +6,8 @@ import base64
 import threading
 import webbrowser
 from PIL import Image
+from dataclasses import dataclass
+from typing import Optional
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -14,19 +16,48 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Optional
+
 from src.tokenization import TokenizerNandi
-from src.transformer import TransformerModel
-from src.imageRecognitionForNandi import VisionEncoder, MLPProjector, VisionBridge
+from src.transformer import TransformerModel, TextGenerator
+from src.imageRecognitionForNandi import (
+    VisionEncoder,
+    VisionEncoderFactory,
+    MLPProjector,
+    VisionBridge,
+    ImagePreprocessor
+)
 from src.dataIngestionPipeline import TokenSplicer, MultimodalInputBatch
-from src.continousLearningFromHumanFeedback import LiveLearner
-from src.config import default_model_config, HTML_PAGE
+from src.continuousLearningFromHumanFeedback import OnlineFeedbackTrainer
+from src.interfaces import IMultimodalSplicer, ITokenizer, ITextGenerator, IImagePreprocessor
+from src.config import (
+    default_model_config,
+    default_chat_generation_config,
+    default_recognition_generation_config,
+    default_live_learning_config,
+    INFERENCE_MAX_SEQ_LEN,
+    DEFAULT_PORT,
+    HTML_PAGE,
+)
+
+
+@dataclass
+class ApplicationState:
+    """Strongly typed application state container replacing untyped global dictionaries."""
+    languageModel: TransformerModel
+    textGenerator: ITextGenerator
+    visionBridge: VisionBridge
+    visionEncoder: VisionEncoder
+    imagePreprocessor: IImagePreprocessor
+    tokenSplicer: IMultimodalSplicer
+    tokenizer: ITokenizer
+    imageTokenIdentifier: Optional[int]
+    executionDevice: torch.device
+    onlineTrainer: OnlineFeedbackTrainer
 
 
 app = FastAPI(title="Nandi SLM Web UI")
 
-# Global model state
-state = {}
+appState: Optional[ApplicationState] = None
 
 
 class ChatRequest(BaseModel):
@@ -53,26 +84,28 @@ def get_device():
 
 
 def load_nandi():
+    global appState
     device = get_device()
     tokenizer = TokenizerNandi()
     if os.path.exists(tokenizer.model_path):
         tokenizer.load()
         if tokenizer.tokenizer.token_to_id("<image>") is None:
-            tokenizer.add_special_tokens(["<image>"])
-        vocab_size = tokenizer.get_vocab_size()
+            tokenizer.addSpecialTokens(["<image>"])
+        vocab_size = tokenizer.getVocabSize()
     else:
         vocab_size = default_model_config.ntoken
 
     image_token_id = tokenizer.tokenizer.token_to_id("<image>") if hasattr(tokenizer, "tokenizer") else None
 
-    # 1. Initialize Vision Bridge
-    print("[+] Initializing SigLIP Vision Encoder and MLP Projector...")
-    vision_encoder = VisionEncoder().to(device)
-    mlp_projector = MLPProjector(visual_dim=vision_encoder.hidden_dim, language_dim=default_model_config.ninp).to(device)
+    # 1. Initialize Vision Bridge via Factory
+    print("[+] Initializing SigLIP Vision Encoder via Factory and MLP Projector...")
+    vision_encoder = VisionEncoderFactory.createVisionEncoder().to(device)
+    mlp_projector = MLPProjector(visual_dim=vision_encoder.hiddenDim, language_dim=default_model_config.ninp).to(device)
     bridge = VisionBridge(encoder=vision_encoder, projector=mlp_projector).to(device)
-    splicer = TokenSplicer()
+    splicer: IMultimodalSplicer = TokenSplicer()
+    image_preprocessor: IImagePreprocessor = ImagePreprocessor()
 
-    # 2. Initialize Language Model Backbone (Match training max_seq_len=512)
+    # 2. Initialize Language Model Backbone & Text Generator
     model = TransformerModel(
         ntoken=vocab_size,
         ninp=default_model_config.ninp,
@@ -81,8 +114,9 @@ def load_nandi():
         nhid=default_model_config.nhid,
         nlayers=default_model_config.nlayers,
         dropout=0.0,
-        max_seq_len=512
+        max_seq_len=INFERENCE_MAX_SEQ_LEN
     ).to(device)
+    text_generator: ITextGenerator = TextGenerator(model)
 
     # 3. Load Checkpoint (prefer nandi_vision_final.pt, fallback to chat/latest)
     checkpoint_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints"))
@@ -104,7 +138,7 @@ def load_nandi():
     model.eval()
     bridge.eval()
 
-    live_learner = LiveLearner(
+    online_trainer = OnlineFeedbackTrainer(
         languageModel=model,
         visionBridge=bridge,
         visionEncoder=vision_encoder,
@@ -112,17 +146,21 @@ def load_nandi():
         tokenizer=tokenizer,
         imageTokenIdentifier=image_token_id,
         executionDevice=device,
-        learningRate=1e-5
+        learningRate=default_live_learning_config.learningRate
     )
 
-    state["model"] = model
-    state["bridge"] = bridge
-    state["vision_encoder"] = vision_encoder
-    state["splicer"] = splicer
-    state["tokenizer"] = tokenizer
-    state["image_token_id"] = image_token_id
-    state["device"] = device
-    state["live_learner"] = live_learner
+    appState = ApplicationState(
+        languageModel=model,
+        textGenerator=text_generator,
+        visionBridge=bridge,
+        visionEncoder=vision_encoder,
+        imagePreprocessor=image_preprocessor,
+        tokenSplicer=splicer,
+        tokenizer=tokenizer,
+        imageTokenIdentifier=image_token_id,
+        executionDevice=device,
+        onlineTrainer=online_trainer
+    )
 
 
 @app.on_event("startup")
@@ -138,7 +176,9 @@ def get_ui():
 @app.post("/api/feedback")
 @app.post("/feedback")
 def handle_feedback(req: FeedbackRequest):
-    live_learner: LiveLearner = state["live_learner"]
+    if appState is None:
+        raise RuntimeError("Application state is not initialized.")
+
     user_prompt = req.prompt.strip()
     corrected_response = req.corrected_response.strip()
     thought = (req.thought or "Clear, accurate, and helpful response.").strip()
@@ -148,14 +188,14 @@ def handle_feedback(req: FeedbackRequest):
         if "," in img_data:
             img_data = img_data.split(",", 1)[1]
         raw_bytes = base64.b64decode(img_data)
-        result = live_learner.executeLiveMultimodalLearningStep(
+        result = appState.onlineTrainer.executeLiveMultimodalLearningStep(
             rawImageBytes=raw_bytes,
             userPrompt=user_prompt if user_prompt else "Describe what is happening in this picture: <image>",
             correctedResponse=corrected_response,
             reasoningThought=thought
         )
     else:
-        result = live_learner.executeLiveTextLearningStep(
+        result = appState.onlineTrainer.executeLiveTextLearningStep(
             userPrompt=user_prompt,
             correctedResponse=corrected_response,
             reasoningThought=thought
@@ -167,30 +207,30 @@ def handle_feedback(req: FeedbackRequest):
 @app.post("/api/chat")
 @app.post("/chat")
 def handle_chat(req: ChatRequest):
-    model = state["model"]
-    tokenizer = state["tokenizer"]
-    device = state["device"]
+    if appState is None:
+        raise RuntimeError("Application state is not initialized.")
 
+    cfg = default_chat_generation_config
     formatted_prompt = f"User: {req.text.strip()}\nAssistant: "
-    encoded = tokenizer.encode(formatted_prompt)
-    input_ids = torch.tensor([encoded.ids], dtype=torch.long, device=device)
+    encoded = appState.tokenizer.encode(formatted_prompt)
+    input_ids = torch.tensor([encoded.ids], dtype=torch.long, device=appState.executionDevice)
 
-    eos_id = getattr(tokenizer, "eos_token_id", None)
-    if eos_id is None and hasattr(tokenizer, "tokenizer"):
-        eos_id = tokenizer.tokenizer.token_to_id("</s>")
+    eos_id = getattr(appState.tokenizer, "eos_token_id", None)
+    if eos_id is None and hasattr(appState.tokenizer, "tokenizer"):
+        eos_id = appState.tokenizer.tokenizer.token_to_id("</s>")
 
-    output_ids = model.generate(
-        idx=input_ids,
-        max_new_tokens=150,
-        temperature=0.6,
-        top_k=25,
-        top_p=0.85,
-        repetition_penalty=1.3,
-        eos_token_id=eos_id
+    output_ids = appState.textGenerator.generateTokens(
+        tokenIndices=input_ids,
+        maxNewTokens=cfg.maxNewTokens,
+        temperature=cfg.temperature,
+        topK=cfg.topK,
+        topP=cfg.topP,
+        repetitionPenalty=cfg.repetitionPenalty,
+        eosTokenId=eos_id
     )
     resp_tokens = output_ids[0][input_ids.size(1):].tolist()
-    response = tokenizer.decode(resp_tokens, skip_special_tokens=True).strip()
-    
+    response = appState.tokenizer.decode(resp_tokens, skipSpecialTokens=True).strip()
+
     # Strip thoughts if model outputs internal reasoning
     if "<|thought|>" in response:
         parts = response.split("<|thought|>")
@@ -202,13 +242,10 @@ def handle_chat(req: ChatRequest):
 @app.post("/api/recognize")
 @app.post("/recognize")
 def handle_recognize(req: RecognizeRequest):
-    model = state["model"]
-    bridge = state["bridge"]
-    vision_encoder = state["vision_encoder"]
-    splicer = state["splicer"]
-    tokenizer = state["tokenizer"]
-    image_token_id = state["image_token_id"]
-    device = state["device"]
+    if appState is None:
+        raise RuntimeError("Application state is not initialized.")
+
+    cfg = default_recognition_generation_config
 
     img_data = req.image
     if "," in img_data:
@@ -216,16 +253,16 @@ def handle_recognize(req: RecognizeRequest):
     img_bytes = base64.b64decode(img_data)
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
-    pixel_values = vision_encoder.processor(images=img, return_tensors="pt").pixel_values.to(device)
+    pixel_values = appState.visionEncoder.processor(images=img, return_tensors="pt").pixel_values.to(appState.executionDevice)
 
     prompt = "User: Describe what is happening in this picture: <image>\nAssistant: <|thought|>\n"
-    encoded = tokenizer.encode(prompt)
-    input_ids = torch.tensor([encoded.ids], dtype=torch.long, device=device)
+    encoded = appState.tokenizer.encode(prompt)
+    input_ids = torch.tensor([encoded.ids], dtype=torch.long, device=appState.executionDevice)
 
     with torch.no_grad():
-        visual_tokens = bridge(pixel_values)
-        embedding_layer = model.get_input_embeddings()
-        ninp = getattr(model, "ninp", visual_tokens.size(-1))
+        visual_tokens = appState.visionBridge(pixel_values)
+        embedding_layer = appState.languageModel.get_input_embeddings()
+        ninp = getattr(appState.languageModel, "ninp", visual_tokens.size(-1))
         scale = math.sqrt(ninp)
         text_embeddings = embedding_layer(input_ids) * scale
 
@@ -233,23 +270,23 @@ def handle_recognize(req: RecognizeRequest):
             input_ids=input_ids,
             text_embeddings=text_embeddings,
             visual_tokens=visual_tokens,
-            image_token_id=image_token_id,
+            image_token_id=appState.imageTokenIdentifier,
         )
-        spliced = splicer.splice(batch_contract)
+        spliced = appState.tokenSplicer.splice(batch_contract)
 
-        eos_id = getattr(tokenizer, "eos_token_id", None)
-        if eos_id is None and hasattr(tokenizer, "tokenizer"):
-            eos_id = tokenizer.tokenizer.token_to_id("</s>")
+        eos_id = getattr(appState.tokenizer, "eos_token_id", None)
+        if eos_id is None and hasattr(appState.tokenizer, "tokenizer"):
+            eos_id = appState.tokenizer.tokenizer.token_to_id("</s>")
 
-        output_tokens = model.generate(
-            inputs_embeds=spliced.embeddings,
-            prefix_len=spliced.embeddings.size(1),
-            max_new_tokens=100,
-            temperature=0.3,
-            top_k=20,
-            top_p=0.8,
-            repetition_penalty=1.35,
-            eos_token_id=eos_id
+        output_tokens = appState.textGenerator.generateTokens(
+            inputsEmbeds=spliced.embeddings,
+            prefixLength=spliced.embeddings.size(1),
+            maxNewTokens=cfg.maxNewTokens,
+            temperature=cfg.temperature,
+            topK=cfg.topK,
+            topP=cfg.topP,
+            repetitionPenalty=cfg.repetitionPenalty,
+            eosTokenId=eos_id
         )
 
         if isinstance(output_tokens, torch.Tensor):
@@ -257,7 +294,7 @@ def handle_recognize(req: RecognizeRequest):
         else:
             token_list = list(output_tokens)
 
-        result_text = tokenizer.decode(token_list, skip_special_tokens=True).strip()
+        result_text = appState.tokenizer.decode(token_list, skipSpecialTokens=True).strip()
 
         # Clean reasoning tokens out to present clean caption to the user
         if "<|thought|>" in result_text:
@@ -267,14 +304,12 @@ def handle_recognize(req: RecognizeRequest):
     return {"text": result_text if result_text else "[Model generated empty description]"}
 
 
-def open_browser(port: int = 7860):
+def open_browser(port: int = DEFAULT_PORT):
     url = f"http://127.0.0.1:{port}"
     print(f"\nNandi SLM Web UI is running at {url}")
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
 
 
 if __name__ == "__main__":
-    port = 7860
-    open_browser(port)
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
-
+    open_browser(DEFAULT_PORT)
+    uvicorn.run(app, host="127.0.0.1", port=DEFAULT_PORT, log_level="info")

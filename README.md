@@ -26,27 +26,36 @@ Nandi uses a modern **Causal Decoder-Only Transformer** built for speed, stabili
 Shiva/
 ├── data/
 │   ├── data.txt                      # 9.1 MB domain text corpus (architecture, code, robotics)
-│   └── nandiTrain.jsonl              # 500 curated Q&A pairs with thoughts & human-readable responses
+│   ├── nandiTrain.jsonl              # 500 curated Q&A pairs with thoughts & human-readable responses
+│   ├── multimodalTrain.jsonl         # Multimodal image-caption alignment data
+│   └── liveConversations.jsonl       # Persistent human feedback logs
 │
 ├── model_artifacts/
 │   ├── tokeniser/                    # Serialized BPE tokenizer model (tokeniser.json)
+│   └── checkpoints/                  # Saved model & projector checkpoints
 │
 ├── src/
+│   ├── interfaces.py                 # Single source of truth for all ABCs and shared DTOs
+│   ├── config.py                     # Centralized configs, dataclasses, and device utility
 │   ├── tokenization.py               # Custom Byte-Level BPE Tokenizer (TokenizerNandi)
-│   ├── dataIngestionPipeline.py      # Chunked PyTorch Dataset & DataLoader pipeline
-│   ├── transformer.py                # 30.2M RoPE + FlashAttention Causal Transformer architecture
-│   └── chat.py                       # Interactive terminal chat & completion interface
+│   ├── transformer.py                # 30.2M RoPE + FlashAttention Causal Transformer & TextGenerator
+│   ├── imageRecognitionForNandi.py   # VisionEncoder, MLPProjector, VisionBridge, ImagePreprocessor
+│   ├── dataIngestionPipeline.py      # Chunked PyTorch Dataset, TokenSplicer & DataLoader pipeline
+│   ├── continuousLearningFromHumanFeedback.py # OnlineFeedbackTrainer, FeedbackRecordLogger, ModelCheckpointStore
+│   └── chat.py                       # FastAPI Web UI with typed ApplicationState
 │
 ├── training/
+│   ├── multimodalTrainer.py          # Shared MultimodalTrainer & MaskedCausalLMLoss
+│   ├── multimodalDataset.py          # Shared MultimodalDataset
 │   ├── trainingNandiOnData.py        # Stage 1: Pre-training on domain corpus with MPS acceleration
-│   └── finetuningNandi.py            # Stage 2: Supervised Fine-Tuning (SFT) on Q&A reasoning pairs
+│   ├── finetuningNandi.py            # Stage 2: Supervised Fine-Tuning (SFT) on Q&A reasoning pairs
+│   ├── stage1AlignmentNandi.py       # Stage 3A: Projector alignment warmup
+│   └── stage2MultimodalNandi.py      # Stage 3B: End-to-end multimodal fine-tuning
 │
 └── README.md
 ```
 
 ---
-All the files are not listed and present citing the size of the files such as the model weights.
---
 
 ## ⚙️ Model Specifications (Lightweight SLM)
 
@@ -160,4 +169,298 @@ python3 src/chat.py
 ## 🧠 Reasoning & CoT (Chain of Thought)
 
 Nandi incorporates `<|thought|>` delimiters within its tokenization vocabulary and data pipelines to support multi-step reasoning traces prior to final solution dispatch.
+
+---
+
+## 🏛️ Architecture & System Diagrams
+
+### 1. Module & File Dependency Graph (DAG)
+
+The codebase strictly follows the **Stable Dependencies Principle (SDP)**. Dependencies flow unidirectionally from higher-level application and training scripts down through core models and into pure foundation interfaces and configuration leaves:
+
+```mermaid
+flowchart TD
+    subgraph Foundation ["1. Foundation Layer (Leaf Nodes)"]
+        cfg["src/config.py\n(Centralized Configs & Device Utils)"]
+        iface["src/interfaces.py\n(Abstract Contracts & Shared DTOs)"]
+    end
+
+    subgraph Core ["2. Core Implementation Modules"]
+        tok["src/tokenization.py\n(TokenizerNandi)"]
+        trans["src/transformer.py\n(TransformerModel, TextGenerator)"]
+        vis["src/imageRecognitionForNandi.py\n(VisionBridge, ImagePreprocessor)"]
+        pipe["src/dataIngestionPipeline.py\n(TokenSplicer, GPTDataset)"]
+        clhf["src/continuousLearningFromHumanFeedback.py\n(OnlineFeedbackTrainer)"]
+    end
+
+    subgraph Training ["3. Training Pipelines"]
+        mtrain["training/multimodalTrainer.py\n(Shared MultimodalTrainer)"]
+        mdataset["training/multimodalDataset.py\n(Shared MultimodalDataset)"]
+        pretrain["training/trainingNandiOnData.py"]
+        sft["training/finetuningNandi.py"]
+        stage1["training/stage1AlignmentNandi.py"]
+        stage2["training/stage2MultimodalNandi.py"]
+    end
+
+    subgraph App ["4. Application Entry Point"]
+        chat["src/chat.py\n(FastAPI Web UI, ApplicationState)"]
+    end
+
+    iface --> tok
+    iface --> trans
+    iface --> vis
+    iface --> pipe
+    iface --> clhf
+    iface --> mtrain
+    iface --> mdataset
+
+    cfg --> trans
+    cfg --> vis
+    cfg --> pipe
+    cfg --> clhf
+    cfg --> chat
+    cfg --> pretrain
+    cfg --> sft
+    cfg --> stage1
+    cfg --> stage2
+
+    tok --> pipe
+    tok --> clhf
+    trans --> clhf
+    vis --> clhf
+    pipe --> clhf
+
+    tok --> chat
+    trans --> chat
+    vis --> chat
+    pipe --> chat
+    clhf --> chat
+
+    mtrain --> stage1
+    mtrain --> stage2
+    mdataset --> stage1
+    mdataset --> stage2
+```
+
+---
+
+### 2. Component Diagram
+
+Nandi's runtime is partitioned into decoupled subsystems communicating through clear interface boundaries:
+
+```mermaid
+graph TB
+    subgraph Client ["Client Interface"]
+        UI["Web Browser / Chat UI"]
+    end
+
+    subgraph AppServer ["Application Layer (src/chat.py)"]
+        AppState["ApplicationState Container"]
+        Router["FastAPI HTTP Handlers\n(/chat, /recognize, /feedback)"]
+    end
+
+    subgraph VisionSubsystem ["Vision Subsystem (src/imageRecognitionForNandi.py)"]
+        ImgPrep["ImagePreprocessor"]
+        VEnc["VisionEncoder (SigLIP)"]
+        VProj["MLPProjector"]
+        VBridge["VisionBridge Composite"]
+    end
+
+    subgraph LanguageSubsystem ["Language Subsystem (src/tokenization.py & src/transformer.py)"]
+        Tok["TokenizerNandi"]
+        SLM["TransformerModel (RoPE + GQA)"]
+        TGen["TextGenerator (Sampling Engine)"]
+    end
+
+    subgraph SplicingSubsystem ["Multimodal Fusion Subsystem (src/dataIngestionPipeline.py)"]
+        Splicer["TokenSplicer (IMultimodalSplicer)"]
+    end
+
+    subgraph LearningSubsystem ["Online Feedback Subsystem (src/continuousLearningFromHumanFeedback.py)"]
+        Trainer["OnlineFeedbackTrainer"]
+        FLog["FeedbackRecordLogger"]
+        CStore["ModelCheckpointStore"]
+    end
+
+    UI --> Router
+    Router --> AppState
+    AppState --> ImgPrep
+    AppState --> VBridge
+    AppState --> Tok
+    AppState --> SLM
+    AppState --> TGen
+    AppState --> Splicer
+    AppState --> Trainer
+
+    VBridge --> VEnc
+    VBridge --> VProj
+    Trainer --> FLog
+    Trainer --> CStore
+    Trainer --> Splicer
+    Trainer --> SLM
+```
+
+---
+
+### 3. Class Diagram (Clean Architecture & SOLID Contracts)
+
+Every business-critical capability is governed by abstract base classes defined in `src/interfaces.py`, upholding the **Dependency Inversion Principle (DIP)** and **Interface Segregation Principle (ISP)**:
+
+```mermaid
+classDiagram
+    class ITokenizer {
+        <<interface>>
+        +encode(text)
+        +decode(tokenIds, skipSpecialTokens)
+        +getVocabSize() int
+    }
+    class ITrainableTokenizer {
+        <<interface>>
+        +train(corpusPath)
+        +load()
+        +addSpecialTokens(tokens) int
+    }
+    ITrainableTokenizer --|> ITokenizer
+    TokenizerNandi ..|> ITrainableTokenizer
+
+    class ITextGenerator {
+        <<interface>>
+        +generateTokens(tokenIndices, inputsEmbeds, ...) Tensor
+    }
+    TextGenerator ..|> ITextGenerator
+    TransformerModel o-- TextGenerator
+
+    class IVisionEncoder {
+        <<interface>>
+        +hiddenDim int
+        +extractFeatures(pixelValues) Tensor
+    }
+    VisionEncoder ..|> IVisionEncoder
+    VisionEncoderFactory ..> VisionEncoder : creates
+
+    class IImagePreprocessor {
+        <<interface>>
+        +getImageTransform(targetImageSize)
+        +preprocessImage(rawImageInput, targetImageSize) Tensor
+    }
+    ImagePreprocessor ..|> IImagePreprocessor
+    imageRecognitionEmbedder o-- IImagePreprocessor
+
+    class IProjector {
+        <<interface>>
+        +project(visualFeatures) Tensor
+    }
+    MLPProjector ..|> IProjector
+    VisionBridge o-- IVisionEncoder
+    VisionBridge o-- IProjector
+
+    class IMultimodalSplicer {
+        <<interface>>
+        +splice(batch) SplicedMultimodalOutput
+    }
+    TokenSplicer ..|> IMultimodalSplicer
+
+    class ILossEvaluator {
+        <<interface>>
+        +evaluate(logits, labels) Tensor
+    }
+    MaskedCausalLMLoss ..|> ILossEvaluator
+    MultimodalTrainer o-- IMultimodalSplicer
+    MultimodalTrainer o-- ILossEvaluator
+
+    class IFeedbackLog {
+        <<interface>>
+        +recordExperienceToDisk(experience, imageRelativePath)
+        +loadReplayBufferSamples(maxSampleCount) list
+    }
+    class ICheckpointStore {
+        <<interface>>
+        +saveCheckpointWeights(languageModel, visionBridge, targetFilePath)
+    }
+    FeedbackRecordLogger ..|> IFeedbackLog
+    ModelCheckpointStore ..|> ICheckpointStore
+    OnlineFeedbackTrainer o-- IFeedbackLog
+    OnlineFeedbackTrainer o-- ICheckpointStore
+
+    class ApplicationState {
+        +languageModel TransformerModel
+        +textGenerator ITextGenerator
+        +visionBridge VisionBridge
+        +visionEncoder VisionEncoder
+        +imagePreprocessor IImagePreprocessor
+        +tokenSplicer IMultimodalSplicer
+        +tokenizer ITokenizer
+        +onlineTrainer OnlineFeedbackTrainer
+    }
+```
+
+---
+
+### 4. Sequence Diagram: Multimodal Inference Flow
+
+Execution timeline when an image recognition request is received by `src/chat.py` (`POST /api/recognize`):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User Browser
+    participant Router as FastAPI (/api/recognize)
+    participant Prep as ImagePreprocessor
+    participant Bridge as VisionBridge
+    participant Splicer as TokenSplicer
+    participant Model as TransformerModel
+    participant Gen as TextGenerator
+
+    User->>Router: POST /api/recognize (base64 image)
+    Router->>Prep: preprocessImage(image)
+    Prep-->>Router: pixelValues tensor
+    Router->>Bridge: forward(pixelValues)
+    Bridge-->>Router: visualTokens (1, NumPatches, D)
+    Router->>Splicer: splice(MultimodalInputBatch)
+    Splicer-->>Router: splicedEmbeddings
+    Router->>Gen: generateTokens(inputsEmbeds=splicedEmbeddings)
+    loop Autoregressive Decoding
+        Gen->>Model: forward(inputs_embeds)
+        Model-->>Gen: logits
+        Gen->>Gen: Apply Repetition Penalty, Temp, Top-K/Top-P
+    end
+    Gen-->>Router: output token ids
+    Router-->>User: JSON { text: "description" }
+```
+
+---
+
+### 5. Sequence Diagram: Continuous Learning from Human Feedback Flow
+
+Execution timeline when a human operator provides a response correction via the UI (`POST /api/feedback`):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User Browser
+    participant Router as FastAPI (/api/feedback)
+    participant Trainer as OnlineFeedbackTrainer
+    participant Splicer as TokenSplicer
+    participant Model as TransformerModel
+    participant Loss as CrossEntropyLoss
+    participant Logger as FeedbackRecordLogger
+    participant Store as ModelCheckpointStore
+
+    User->>Router: POST /api/feedback (prompt, correction, image)
+    Router->>Trainer: executeLiveMultimodalLearningStep(...)
+    Trainer->>Splicer: splice(MultimodalInputBatch)
+    Splicer-->>Trainer: splicedBatch (embeddings, labels)
+    Trainer->>Model: forward(inputs_embeds)
+    Model-->>Trainer: logits
+    Trainer->>Loss: compute loss on assistant tokens
+    Loss-->>Trainer: scalar loss
+    Trainer->>Trainer: backward() & optimizer.step()
+    Trainer->>Logger: recordExperienceToDisk(LiveExperience)
+    opt Every N Steps (checkpointEveryNSteps == 3)
+        Trainer->>Store: saveCheckpointWeights(model, bridge, path)
+    end
+    Trainer-->>Router: { status: "success", loss: 0.12, step: 3 }
+    Router-->>User: HTTP 200 Response
+```
+
 

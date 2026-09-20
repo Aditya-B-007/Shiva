@@ -9,13 +9,17 @@ from PIL import Image
 
 import torch
 import torch.nn as nn
-from torch.optim import AdamW
+from torch.optim import AdamW, Optimizer
 
-from src.tokenization import TokenizerNandi
+from src.interfaces import IFeedbackLog, ICheckpointStore, IMultimodalSplicer, ITokenizer, MultimodalInputBatch
 from src.transformer import TransformerModel
 from src.imageRecognitionForNandi import VisionEncoder, VisionBridge
-from src.dataIngestionPipeline import TokenSplicer, MultimodalInputBatch
+from src.config import default_live_learning_config
 
+
+# =============================================================================
+# Data contract for a single live-learning experience
+# =============================================================================
 
 @dataclass
 class LiveExperience:
@@ -25,14 +29,20 @@ class LiveExperience:
     imageBytes: Optional[bytes] = None
 
 
-class ExperienceArchive:
-    def __init__(self, persistenceFilePath: str, checkpointDirectoryPath: str):
-        self.persistenceFilePath = persistenceFilePath
-        self.checkpointDirectoryPath = checkpointDirectoryPath
-        os.makedirs(os.path.dirname(self.persistenceFilePath), exist_ok=True)
-        os.makedirs(self.checkpointDirectoryPath, exist_ok=True)
+# =============================================================================
+# Feedback Record Logger (implements IFeedbackLog)
+# =============================================================================
 
-    def recordExperienceToDisk(self, experience: LiveExperience, imageRelativePath: Optional[str] = None) -> None:
+class FeedbackRecordLogger(IFeedbackLog):
+    def __init__(self, persistenceFilePath: str):
+        self.persistenceFilePath = persistenceFilePath
+        os.makedirs(os.path.dirname(self.persistenceFilePath), exist_ok=True)
+
+    def recordExperienceToDisk(
+        self,
+        experience: LiveExperience,
+        imageRelativePath: Optional[str] = None
+    ) -> None:
         recordData = {
             "human_prompt": experience.userPrompt,
             "thought": experience.reasoningThought,
@@ -43,14 +53,6 @@ class ExperienceArchive:
 
         with open(self.persistenceFilePath, "a", encoding="utf-8") as archiveFile:
             archiveFile.write(json.dumps(recordData, ensure_ascii=False) + "\n")
-
-    def saveCheckpointWeights(self, languageModel: TransformerModel, visionBridge: VisionBridge, targetFilePath: str) -> None:
-        savePayload = {
-            "model_state_dict": languageModel.state_dict(),
-            "projector_state_dict": visionBridge.projector.state_dict()
-        }
-        torch.save(savePayload, targetFilePath)
-        print(f"[+] Live learning weights successfully saved to: {targetFilePath}")
 
     def loadReplayBufferSamples(self, maxSampleCount: int = 4) -> List[Dict[str, Any]]:
         loadedSamples = []
@@ -68,17 +70,75 @@ class ExperienceArchive:
         return loadedSamples
 
 
-class LiveLearner:
+# =============================================================================
+# Model Checkpoint Store (implements ICheckpointStore)
+# =============================================================================
+
+class ModelCheckpointStore(ICheckpointStore):
+
+    def __init__(self, checkpointDirectoryPath: str):
+        self.checkpointDirectoryPath = checkpointDirectoryPath
+        os.makedirs(self.checkpointDirectoryPath, exist_ok=True)
+
+    def saveCheckpointWeights(
+        self,
+        languageModel: nn.Module,
+        visionBridge: Any,
+        targetFilePath: str
+    ) -> None:
+        savePayload = {
+            "model_state_dict": languageModel.state_dict(),
+            "projector_state_dict": visionBridge.projector.state_dict()
+        }
+        torch.save(savePayload, targetFilePath)
+        print(f"[+] Live learning weights successfully saved to: {targetFilePath}")
+
+
+# =============================================================================
+# Composite Persistence (Backwards-compatible helper)
+# =============================================================================
+
+class FeedbackPersistence(IFeedbackLog, ICheckpointStore):
+    """Composite retaining legacy interface for callers needing unified persistence."""
+
+    def __init__(self, persistenceFilePath: str, checkpointDirectoryPath: str):
+        self.logger = FeedbackRecordLogger(persistenceFilePath)
+        self.store = ModelCheckpointStore(checkpointDirectoryPath)
+
+    def recordExperienceToDisk(self, experience: Any, imageRelativePath: Optional[str] = None) -> None:
+        self.logger.recordExperienceToDisk(experience, imageRelativePath)
+
+    def loadReplayBufferSamples(self, maxSampleCount: int = 4) -> List[Dict[str, Any]]:
+        return self.logger.loadReplayBufferSamples(maxSampleCount)
+
+    def saveCheckpointWeights(self, languageModel: nn.Module, visionBridge: Any, targetFilePath: str) -> None:
+        self.store.saveCheckpointWeights(languageModel, visionBridge, targetFilePath)
+
+
+# =============================================================================
+# OnlineFeedbackTrainer — drives live single-step learning from UI corrections
+# =============================================================================
+
+class OnlineFeedbackTrainer:
+    """
+    Orchestrates online learning steps from user corrections.
+    Fully decoupled with dependency-injected optimizer, loss function,
+    feedback logger, and checkpoint store.
+    """
     def __init__(
         self,
         languageModel: TransformerModel,
         visionBridge: VisionBridge,
         visionEncoder: VisionEncoder,
-        tokenSplicer: TokenSplicer,
-        tokenizer: TokenizerNandi,
+        tokenSplicer: IMultimodalSplicer,
+        tokenizer: ITokenizer,
         imageTokenIdentifier: int,
         executionDevice: torch.device,
-        learningRate: float = 1e-5,
+        learningRate: float = default_live_learning_config.learningRate,
+        optimizer: Optional[Optimizer] = None,
+        lossFunction: Optional[nn.Module] = None,
+        feedbackLogger: Optional[IFeedbackLog] = None,
+        checkpointStore: Optional[ICheckpointStore] = None,
         archiveStoragePath: Optional[str] = None,
         checkpointStoragePath: Optional[str] = None
     ):
@@ -96,18 +156,28 @@ class LiveLearner:
         resolvedCheckpointDir = checkpointStoragePath or os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "checkpoints")
         )
-        self.archive = ExperienceArchive(resolvedArchive, resolvedCheckpointDir)
+        self.feedbackLogger = feedbackLogger or FeedbackRecordLogger(resolvedArchive)
+        self.checkpointStore = checkpointStore or ModelCheckpointStore(resolvedCheckpointDir)
         self.targetCheckpointPath = os.path.join(resolvedCheckpointDir, "nandi_vision_final.pt")
 
-        trainableParameters = [
-            {"params": self.languageModel.parameters(), "lr": learningRate},
-            {"params": self.visionBridge.projector.parameters(), "lr": learningRate * 2.0}
-        ]
-        self.optimizer = AdamW(trainableParameters, weight_decay=0.01)
-        self.lossFunction = nn.CrossEntropyLoss(ignore_index=-100)
+        cfg = default_live_learning_config
+        if optimizer is not None:
+            self.optimizer = optimizer
+        else:
+            trainableParameters = [
+                {"params": self.languageModel.parameters(), "lr": learningRate},
+                {"params": self.visionBridge.projector.parameters(), "lr": learningRate * cfg.projectorLrMultiplier}
+            ]
+            self.optimizer = AdamW(trainableParameters, weight_decay=cfg.weightDecay)
+
+        self.lossFunction = lossFunction or nn.CrossEntropyLoss(ignore_index=-100)
         self.stepCounter = 0
 
-    def maskUserPromptTokensForLossCalculation(self, completeTokenSequence: List[int], promptTokenCount: int) -> List[int]:
+    def maskUserPromptTokensForLossCalculation(
+        self,
+        completeTokenSequence: List[int],
+        promptTokenCount: int
+    ) -> List[int]:
         targetSequence = list(completeTokenSequence)
         limit = min(promptTokenCount, len(targetSequence))
         for tokenIndex in range(limit):
@@ -121,6 +191,7 @@ class LiveLearner:
         reasoningThought: str = "Clear and helpful answer."
     ) -> Dict[str, Any]:
         self.languageModel.train()
+        cfg = default_live_learning_config
 
         promptText = f"User: {userPrompt.strip()}\nAssistant: <|thought|>\n"
         fullConversationText = f"{promptText}{reasoningThought.strip()}\n<|thought|>\n{correctedResponse.strip()}</s>"
@@ -128,8 +199,8 @@ class LiveLearner:
         promptTokenIds = self.tokenizer.encode(promptText).ids
         fullTokenIds = self.tokenizer.encode(fullConversationText).ids
 
-        if len(fullTokenIds) > 512:
-            fullTokenIds = fullTokenIds[:512]
+        if len(fullTokenIds) > cfg.maxSeqLen:
+            fullTokenIds = fullTokenIds[:cfg.maxSeqLen]
 
         targetTokenIds = self.maskUserPromptTokensForLossCalculation(fullTokenIds, len(promptTokenIds))
 
@@ -145,7 +216,7 @@ class LiveLearner:
         )
 
         lossValue.backward()
-        torch.nn.utils.clip_grad_norm_(self.languageModel.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.languageModel.parameters(), max_norm=cfg.gradClip)
         self.optimizer.step()
         self.languageModel.eval()
 
@@ -155,10 +226,10 @@ class LiveLearner:
             correctedResponse=correctedResponse,
             reasoningThought=reasoningThought
         )
-        self.archive.recordExperienceToDisk(experience)
+        self.feedbackLogger.recordExperienceToDisk(experience)
 
-        if self.stepCounter % 3 == 0:
-            self.archive.saveCheckpointWeights(self.languageModel, self.visionBridge, self.targetCheckpointPath)
+        if self.stepCounter % cfg.checkpointEveryNSteps == 0:
+            self.checkpointStore.saveCheckpointWeights(self.languageModel, self.visionBridge, self.targetCheckpointPath)
 
         return {
             "status": "success",
@@ -175,6 +246,7 @@ class LiveLearner:
     ) -> Dict[str, Any]:
         self.languageModel.train()
         self.visionBridge.projector.train()
+        cfg = default_live_learning_config
 
         openedImage = Image.open(io.BytesIO(rawImageBytes)).convert("RGB")
         pixelValues = self.visionEncoder.processor(images=openedImage, return_tensors="pt").pixel_values.to(self.executionDevice)
@@ -185,8 +257,8 @@ class LiveLearner:
         promptTokenIds = self.tokenizer.encode(promptText).ids
         fullTokenIds = self.tokenizer.encode(fullConversationText).ids
 
-        if len(fullTokenIds) > 512:
-            fullTokenIds = fullTokenIds[:512]
+        if len(fullTokenIds) > cfg.maxSeqLen:
+            fullTokenIds = fullTokenIds[:cfg.maxSeqLen]
 
         targetTokenIds = self.maskUserPromptTokensForLossCalculation(fullTokenIds, len(promptTokenIds))
 
@@ -208,11 +280,8 @@ class LiveLearner:
 
         splicedBatch = self.tokenSplicer.splice(multimodalBatch)
 
-        splicedEmbeddings = splicedBatch.embeddings
-        splicedLabels = splicedBatch.labels
-
-        inputSplicedEmbeddings = splicedEmbeddings[:, :-1, :]
-        targetSplicedLabels = splicedLabels[:, 1:]
+        inputSplicedEmbeddings = splicedBatch.embeddings[:, :-1, :]
+        targetSplicedLabels = splicedBatch.labels[:, 1:]
 
         self.optimizer.zero_grad()
         outputs = self.languageModel(inputs_embeds=inputSplicedEmbeddings)
@@ -226,7 +295,7 @@ class LiveLearner:
         lossValue.backward()
         torch.nn.utils.clip_grad_norm_(
             list(self.languageModel.parameters()) + list(self.visionBridge.projector.parameters()),
-            max_norm=1.0
+            max_norm=cfg.gradClip
         )
         self.optimizer.step()
 
@@ -251,10 +320,10 @@ class LiveLearner:
             reasoningThought=reasoningThought,
             imageBytes=rawImageBytes
         )
-        self.archive.recordExperienceToDisk(experience, savedImageRelativePath)
+        self.feedbackLogger.recordExperienceToDisk(experience, savedImageRelativePath)
 
-        if self.stepCounter % 3 == 0:
-            self.archive.saveCheckpointWeights(self.languageModel, self.visionBridge, self.targetCheckpointPath)
+        if self.stepCounter % cfg.checkpointEveryNSteps == 0:
+            self.checkpointStore.saveCheckpointWeights(self.languageModel, self.visionBridge, self.targetCheckpointPath)
 
         return {
             "status": "success",

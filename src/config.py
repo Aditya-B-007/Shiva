@@ -1,8 +1,15 @@
 import os
+import torch
 import configparser
 from dataclasses import dataclass
+from typing import Tuple
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".config"))
+
+
+# =============================================================================
+# Model / Architecture Config
+# =============================================================================
 
 @dataclass
 class ModelConfig:
@@ -15,12 +22,14 @@ class ModelConfig:
     dropout: float = 0.1
     max_seq_len: int = 256
 
+
 @dataclass
 class VisionConfig:
     image_size: int = 224
     patch_size: int = 16
     in_channels: int = 3
     model: str = "google/siglip-base-patch16-224"
+
 
 @dataclass
 class TrainConfig:
@@ -34,7 +43,146 @@ class TrainConfig:
     epochs: int = 1
     eval_interval: int = 250
     save_interval: int = 500
-    
+
+
+# =============================================================================
+# Generation / Inference Configs
+# =============================================================================
+
+@dataclass
+class GenerationConfig:
+    """Default autoregressive generation parameters."""
+    maxNewTokens: int = 250
+    temperature: float = 0.5
+    topK: int = 30
+    topP: float = 0.85
+    repetitionPenalty: float = 1.2
+
+
+@dataclass
+class ChatGenerationConfig:
+    """Generation parameters for the /api/chat endpoint."""
+    maxNewTokens: int = 150
+    temperature: float = 0.6
+    topK: int = 25
+    topP: float = 0.85
+    repetitionPenalty: float = 1.3
+
+
+@dataclass
+class RecognitionGenerationConfig:
+    """Generation parameters for the /api/recognize endpoint."""
+    maxNewTokens: int = 100
+    temperature: float = 0.3
+    topK: int = 20
+    topP: float = 0.8
+    repetitionPenalty: float = 1.35
+
+
+# =============================================================================
+# Online / Live-Learning Config
+# =============================================================================
+
+@dataclass
+class LiveLearningConfig:
+    """Parameters governing the online feedback training loop."""
+    learningRate: float = 1e-5
+    projectorLrMultiplier: float = 2.0
+    weightDecay: float = 0.01
+    maxSeqLen: int = 512
+    gradClip: float = 1.0
+    checkpointEveryNSteps: int = 3
+
+
+# =============================================================================
+# Supervised Fine-Tuning Config
+# =============================================================================
+
+@dataclass
+class SFTConfig:
+    """Hyperparameters for supervised fine-tuning (finetuningNandi.py)."""
+    batchSize: int = 8
+    gradAccumSteps: int = 4
+    learningRate: float = 3e-4
+    minLr: float = 3e-5
+    weightDecay: float = 0.05
+    gradClip: float = 1.0
+    epochs: int = 10
+    evalInterval: int = 100
+    saveInterval: int = 250
+    maxSeqLen: int = 512
+    dropout: float = 0.05
+
+
+# =============================================================================
+# Multimodal Stage Training Configs
+# =============================================================================
+
+@dataclass
+class Stage1TrainConfig:
+    """Hyperparameters for Stage-1 projector alignment (stage1AlignmentNandi.py)."""
+    batchSize: int = 2
+    gradAccumSteps: int = 4
+    learningRate: float = 1e-3
+    minLr: float = 1e-6
+    weightDecay: float = 0.01
+    gradClip: float = 1.0
+    epochs: int = 8
+    evalInterval: int = 10
+    saveInterval: int = 50
+    maxSeqLen: int = 512
+    dropout: float = 0.05
+
+
+@dataclass
+class Stage2TrainConfig:
+    """Hyperparameters for Stage-2 joint multimodal fine-tuning (stage2MultimodalNandi.py)."""
+    batchSize: int = 2
+    gradAccumSteps: int = 4
+    learningRate: float = 2e-5
+    minLr: float = 1e-6
+    weightDecay: float = 0.01
+    gradClip: float = 1.0
+    epochs: int = 8
+    evalInterval: int = 10
+    saveInterval: int = 50
+    maxSeqLen: int = 512
+    dropout: float = 0.05
+
+
+# =============================================================================
+# Module-level Constants
+# (named, never raw literals anywhere else in the codebase)
+# =============================================================================
+
+# Tokenizer training
+VOCAB_SIZE: int = 50257
+MIN_FREQUENCY: int = 2
+
+# Server
+DEFAULT_PORT: int = 7860
+
+# Transformer / RoPE
+ROPE_BASE: float = 10000.0
+MAX_GENERATE_CONTEXT: int = 8192       # max tokens kept in generate() rolling window
+REPETITION_PENALTY_WINDOW: int = 64    # last N tokens checked for repetition penalty
+TEMPERATURE_EPSILON: float = 1e-5      # floor to avoid division by zero in temperature scaling
+
+# Inference
+INFERENCE_MAX_SEQ_LEN: int = 512       # context length used at chat / inference time
+
+# Vision / image preprocessing
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD  = [0.229, 0.224, 0.225]
+
+# Tokenizer fallbacks
+DEFAULT_PAD_TOKEN_ID: int = 1
+
+
+# =============================================================================
+# Config loader (reads .config file at project root)
+# =============================================================================
+
 def load_config(config_path=CONFIG_PATH):
     model_cfg = ModelConfig()
     vision_cfg = VisionConfig()
@@ -105,7 +253,51 @@ def load_config(config_path=CONFIG_PATH):
 
     return model_cfg, vision_cfg, train_cfg
 
+
+# =============================================================================
+# Device / AMP utility  (centralised here so no script duplicates it)
+# =============================================================================
+
+def getDeviceAndDtype() -> Tuple[torch.device, bool, torch.dtype]:
+    """
+    Detect the best available compute device and return
+    (device, use_amp, amp_dtype).
+    """
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+        use_amp = True
+        amp_dtype = torch.bfloat16
+        print(">> Running on Apple Silicon Metal Performance Shaders (MPS) with AMP acceleration!")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+        use_amp = True
+        amp_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    else:
+        device = torch.device("cpu")
+        use_amp = False
+        amp_dtype = torch.float32
+        print(">> Running on CPU.")
+    return device, use_amp, amp_dtype
+
+
+# =============================================================================
+# Module-level singletons (imported by the rest of the codebase)
+# =============================================================================
+
 default_model_config, default_vision_config, default_train_config = load_config()
+
+default_generation_config           = GenerationConfig()
+default_chat_generation_config      = ChatGenerationConfig()
+default_recognition_generation_config = RecognitionGenerationConfig()
+default_live_learning_config        = LiveLearningConfig()
+default_sft_config                  = SFTConfig()
+default_stage1_config               = Stage1TrainConfig()
+default_stage2_config               = Stage2TrainConfig()
+
+
+# =============================================================================
+# HTML_PAGE — kept in config so chat.py stays thin
+# =============================================================================
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">

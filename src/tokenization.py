@@ -1,75 +1,85 @@
 import os
 from tokenizers import Tokenizer, models, pre_tokenizers, trainers, decoders
 
+try:
+    from src.interfaces import ITrainableTokenizer
+    from src.config import VOCAB_SIZE, MIN_FREQUENCY
+except (ImportError, ModuleNotFoundError):
+    from interfaces import ITrainableTokenizer
+    from config import VOCAB_SIZE, MIN_FREQUENCY
+
 DEFAULT_TOKENIZER_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "model_artifacts", "tokeniser", "tokeniser.json")
 )
 
-class Config:
-    CORPUS_PATH = os.getenv("CORPUS_PATH", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "data.txt")))
+
+class TokenizerConfig:
+    """Filesystem paths used by TokenizerNandi. Override via environment variables."""
+    CORPUS_PATH = os.getenv(
+        "CORPUS_PATH",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "data.txt"))
+    )
     MODEL_ARTIFACTS_PATH = os.getenv("MODEL_ARTIFACTS_PATH", DEFAULT_TOKENIZER_PATH)
 
-class TokenizerNandi:
-    def __init__(self, model_path=None):
-        if model_path is None:
-            model_path = Config.MODEL_ARTIFACTS_PATH or DEFAULT_TOKENIZER_PATH
-        self.model_path = model_path
+
+class TokenizerNandi(ITrainableTokenizer):
+    def __init__(self, modelPath=None):
+        if modelPath is None:
+            modelPath = TokenizerConfig.MODEL_ARTIFACTS_PATH or DEFAULT_TOKENIZER_PATH
+        self.model_path = modelPath
         self.tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
         self.tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
         self.tokenizer.decoder = decoders.ByteLevel()
-        special_tokens = ["<unk>", "<pad>", "</s>", "<|thought|>", "<image>"]
-    def train(self, corpus_path=Config.CORPUS_PATH):
+
+    def train(self, corpusPath=TokenizerConfig.CORPUS_PATH) -> None:
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         trainer = trainers.BpeTrainer(
             special_tokens=["<unk>", "<pad>", "</s>", "<|thought|>", "<image>"],
-            vocab_size=50257,
-            min_frequency=2,
+            vocab_size=VOCAB_SIZE,
+            min_frequency=MIN_FREQUENCY,
             initial_alphabet=pre_tokenizers.ByteLevel.alphabet()
         )
-        def page_iterator():
-            with open(corpus_path, "r", encoding="utf-8") as f:
+
+        def pageIterator():
+            with open(corpusPath, "r", encoding="utf-8") as f:
                 for line in f:
                     yield line.strip()
 
-        self.tokenizer.train_from_iterator(
-            page_iterator(),
-            trainer=trainer
-        )
+        self.tokenizer.train_from_iterator(pageIterator(), trainer=trainer)
         self.tokenizer.save(self.model_path)
-    def load(self):
+
+    def load(self) -> None:
         self.tokenizer = Tokenizer.from_file(self.model_path)
-    def add_special_tokens(self, tokens):
+
+    def addSpecialTokens(self, tokens) -> int:
         return self.tokenizer.add_special_tokens(tokens)
-    def encode(self, text):
+
+    def encode(self, text: str):
         return self.tokenizer.encode(text)
-    def decode(self, token_ids, skip_special_tokens=False):
-        return self.tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
-    def get_vocab_size(self):
+
+    def decode(self, tokenIds, skipSpecialTokens: bool = False) -> str:
+        return self.tokenizer.decode(tokenIds, skip_special_tokens=skipSpecialTokens)
+
+    def getVocabSize(self) -> int:
         return self.tokenizer.get_vocab_size()
 
+
 if __name__ == "__main__":
-    corpus_path = Config.CORPUS_PATH
-    os.makedirs(os.path.dirname(corpus_path), exist_ok=True)
+    corpusPath = TokenizerConfig.CORPUS_PATH
+    os.makedirs(os.path.dirname(corpusPath), exist_ok=True)
 
     tokenizer = TokenizerNandi()
-    model_path = Config.MODEL_ARTIFACTS_PATH
+    modelPath = TokenizerConfig.MODEL_ARTIFACTS_PATH
     import sys
-    force_retrain = "--train" in sys.argv or "--force" in sys.argv
+    forceRetrain = "--train" in sys.argv or "--force" in sys.argv
 
-    if force_retrain or not os.path.exists(model_path) or os.path.getsize(model_path) == 0:
-        tokenizer.train(corpus_path)
+    if forceRetrain or not os.path.exists(modelPath) or os.path.getsize(modelPath) == 0:
+        tokenizer.train(corpusPath)
     else:
         tokenizer.load()
-    test_texts = [
-       "Boy",
-       "Girl",
-       "Happy",
-       "Environment",
-       "Door",
-       "Banana",
-       "Car"
-    ]
-    for text in test_texts:
+
+    testTexts = ["Boy", "Girl", "Happy", "Environment", "Door", "Banana", "Car"]
+    for text in testTexts:
         encoded = tokenizer.encode(text)
         print(f"\nText: {text}")
         print(f"Tokens: {encoded.tokens}")
@@ -77,4 +87,4 @@ if __name__ == "__main__":
         decoded = tokenizer.decode(encoded.ids)
         print(f"Decoded Text: {decoded}")
         assert text == decoded, "Encode-decode mismatch"
-    print("Vocabulary size:", tokenizer.tokenizer.get_vocab_size())
+    print("Vocabulary size:", tokenizer.getVocabSize())
