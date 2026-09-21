@@ -1,17 +1,6 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from PyPDF2 import PdfReader
-
-#======DTOs (Data Transfer Objects) ======
-class userPrompts(BaseModel):
-    prompt: str = None
-
-class DataUpload(BaseModel):
-    fileContent: Optional[str] = None  # Content of the file to upload (the extracted text)
-    fileName: Optional[str] = None   # Name of the file to be uploaded.
-    prompt: Optional[userPrompts] = None # Nested prompt object
-
-#========================================
+from src.dtos import UserPromptDTO, DataUploadDTO
 
 #=======PDF Processor=====================
 class PdfProcessor:
@@ -34,18 +23,18 @@ class PdfProcessor:
         except Exception as e:
             return f"An error occurred during PDF extraction: {e}"
     
-    def process_and_create_upload_dto(self, pdf_path: str, file_name: str, user_prompt: Optional[str] = None) -> DataUpload:
+    def process_and_create_upload_dto(self, pdf_path: str, file_name: str, user_prompt: Optional[str] = None) -> DataUploadDTO:
         try:
             extracted_text = self._extract_text_from_pdf(pdf_path)
             prompt_dto = None
             if user_prompt:
                 try:
-                    prompt_dto = userPrompts(prompt=user_prompt)
+                    prompt_dto = UserPromptDTO(prompt=user_prompt)
                 except Exception as e:
                     print(f"Error validating user prompt: {e}")
                     prompt_dto = None 
 
-            data_upload = DataUpload(
+            data_upload = DataUploadDTO(
                 fileContent=extracted_text,
                 fileName=file_name,
                 prompt=prompt_dto
@@ -54,4 +43,4 @@ class PdfProcessor:
 
         except Exception as e:
             print(f"An error occurred during processing: {e}")
-            return DataUpload(fileContent=None, fileName=file_name, prompt=None)
+            return DataUploadDTO(fileContent=None, fileName=file_name, prompt=None)
