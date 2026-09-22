@@ -105,3 +105,46 @@ The model's memory usage depends heavily on the precision used for deployment.
 **Conclusion:** This profile is optimized for efficient deployment, fitting comfortably within modest consumer hardware or embedded edge systems, leaving ample VRAM for batch processing.
 
 
+## Understanding the numbers in simple terms
+
+**768** is **not** the context length—it is the **feature width (hidden dimension)**.
+
+**512** appears in two places in this architecture: once as the **maximum context length** (token sequence length), and once as the **decision space width** (the length of the Situation Vector $z$).
+
+---
+
+### The Matrix Mental Model
+
+Think of the data passing through the Transformer as a 2D table or grid:
+
+$$\text{Shape: } [\text{Sequence Length} \times \text{Hidden Dimension}]$$
+
+* **Rows (Sequence Length / Context Length):** How many words/tokens are in the sentence (up to **512** words).
+
+
+* **Columns (Hidden Dimension):** How many numbers are used to represent the meaning of *one single word* (**768** numbers).
+
+
+
+---
+
+### Breakdown of Every Number Discussed
+
+* **768 (Hidden Dimension / $d_{\text{model}}$):**
+* The size of a single token's feature vector.
+* Every word that enters the 12-layer Transformer is described by an array of 768 numbers.
+
+* **512 (Two Separate Roles):**
+  * **Maximum Context Length:** The maximum number of tokens (words/sub-words) the encoder can read at once ($512 \text{ positions} \times 768$).
+  * **Situation Vector Dimension ($z \in \mathbb{R}^{512}$):** The compact vector size chosen for the decision and scoring heads. The Situation MLP compresses the 768-wide pooled text down to 512 numbers.
+
+* **3,072 (Feed-Forward Expansion Dimension):** Inside each encoder layer, the FFN temporarily multiplies the features $4 \times$ wider ($768 \times 4 = 3072$) so the activation function can reason through complex feature combinations before projecting back down to 768.
+
+* **12 (Layers and Heads):**
+   * **12 Layers:** The backbone contains 12 stacked Transformer encoder blocks.
+   * **12 Heads:** In each layer, the 768 features are split across 12 parallel attention heads ($768 / 12 = 64$) so the model can track 12 different contextual relationships simultaneously.
+* **64 (Head Dimension / $d_k$):** : The size of the Query, Key, and Value vectors inside an individual attention head ($768 / 12 = 64$).
+* **30,522 (Vocabulary Size):** : The total number of unique words and sub-word pieces in the tokenizer's dictionary.
+* **$K$ (Candidate Options Count):** : The number of choices supplied by the user (e.g., 2, 4, or 10 options), forming an Options Matrix of shape $[K \times 512]$.
+
+
