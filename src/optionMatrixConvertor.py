@@ -1,36 +1,72 @@
-from typing import List, Union
 import numpy as np
-from src.dtos import CandidateOptionDTO, OptionMatrixRequestDTO
-from src.tokenizer import BPETokenizer, EmbeddingTable
-from src.transformer import BidirectionalEncoderStack, mean_pooling
+from typing import List
 
-__all__ = ["CandidateOptionDTO", "OptionMatrixRequestDTO", "OptionMatrixConverter"]
-
-
-class OptionMatrixConverter:
+class OptionMatrixConvertor:
     def __init__(
         self,
-        tokenizer: BPETokenizer,
-        embedder: EmbeddingTable,
-        encoder: BidirectionalEncoderStack,
+        tokenizer,
+        embedder,
+        hidden_dim: int = 768,
+        out_dim: int = 512,
+        seed: int = 42
     ):
         self.tokenizer = tokenizer
         self.embedder = embedder
-        self.encoder = encoder
+        self.hidden_dim = hidden_dim
+        self.out_dim = out_dim
 
-    def convert(self, options: Union[List[str], List[CandidateOptionDTO], OptionMatrixRequestDTO]) -> np.ndarray:
-        if isinstance(options, OptionMatrixRequestDTO):
-            texts = [opt.text for opt in options.options]
-        elif isinstance(options, list):
-            texts = [opt.text if isinstance(opt, CandidateOptionDTO) else str(opt) for opt in options]
-        else:
-            raise TypeError("Unsupported options format for OptionMatrixConverter")
+        rng = np.random.RandomState(seed)
+        scale = np.sqrt(2.0 / (hidden_dim + out_dim))
+        self.W_proj = rng.randn(hidden_dim, out_dim).astype(np.float32) * scale
+        self.b_proj = np.zeros(out_dim, dtype=np.float32)
 
-        if not texts:
-            return np.empty((0, self.embedder.hidden_dim), dtype=np.float32)
+    def convert(self, action_strings: List[str]) -> np.ndarray:
+        if hasattr(action_strings, "options"):
+            action_strings = [opt.text for opt in action_strings.options]
+        elif isinstance(action_strings, list):
+            action_strings = [opt.text if hasattr(opt, "text") else str(opt) for opt in action_strings]
 
-        input_ids, attention_mask = self.tokenizer.encode_batch(texts)
-        embeddings = self.embedder.forward(input_ids)
-        encoder_out = self.encoder.forward(embeddings, attention_mask=attention_mask)
-        pooled = mean_pooling(encoder_out, attention_mask=attention_mask)
-        return pooled
+        K = len(action_strings)
+        if K == 0:
+            return np.empty((0, self.out_dim), dtype=np.float32)
+
+        # 1. Tokenize all action strings
+        tokenized_actions = [self.tokenizer.encode(action) for action in action_strings]
+        
+        # Ensure at least length 1 to prevent empty zero-dim arrays
+        max_seq_len = max(max(len(toks) for toks in tokenized_actions), 1)
+
+        # 2. Vectorized Batching and Padding (Pad token ID = 0)
+        batch_ids = np.zeros((K, max_seq_len), dtype=np.int32)
+        attention_mask = np.zeros((K, max_seq_len), dtype=np.float32)
+
+        for i, token_ids in enumerate(tokenized_actions):
+            if len(token_ids) > 0:
+                batch_ids[i, :len(token_ids)] = token_ids
+                attention_mask[i, :len(token_ids)] = 1.0
+            else:
+                batch_ids[i, 0] = 0
+                attention_mask[i, 0] = 0.0
+
+        # 3. Shared Embedding Lookup: [K, max_seq_len, 768]
+        embeddings = self.embedder.forward(batch_ids)
+
+        # 4. Masked Mean Pooling: [K, 768]
+        mask_expanded = attention_mask[:, :, np.newaxis]  # [K, max_seq_len, 1]
+        sum_embeddings = np.sum(embeddings * mask_expanded, axis=1)
+        sum_mask = np.clip(np.sum(mask_expanded, axis=1), a_min=1e-9, a_max=None)
+        pooled_vectors = sum_embeddings / sum_mask  # [K, 768]
+
+        # 5. Linear Projection: [K, 768] @ [768, 512] -> [K, 512]
+        projected = np.matmul(pooled_vectors, self.W_proj) + self.b_proj
+
+        # 6. Radial L2 Normalization onto the unit sphere S^511
+        eps = 1e-12
+        norms = np.linalg.norm(projected, ord=2, axis=-1, keepdims=True) + eps
+        options_matrix = projected / norms
+
+        return options_matrix.astype(np.float32)
+
+
+OptionMatrixConverter = OptionMatrixConvertor
+__all__ = ["OptionMatrixConvertor", "OptionMatrixConverter"]
