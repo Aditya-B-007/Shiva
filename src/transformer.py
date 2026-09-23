@@ -202,8 +202,21 @@ class BidirectionalEncoderStack:
 
 
 # =====================================================================
-# 6. SITUATION / FINAL MLP 
+# 6. POOLING & SITUATION / FINAL MLP 
 # =====================================================================
+
+def mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray = None) -> np.ndarray:
+    if token_embeddings.ndim == 2:
+        return token_embeddings
+
+    if attention_mask is not None:
+        expanded_mask = attention_mask[:, :, np.newaxis].astype(np.float32)
+        sum_embeddings = np.sum(token_embeddings * expanded_mask, axis=1)
+        sum_mask = np.clip(np.sum(expanded_mask, axis=1), a_min=1e-9, a_max=None)
+        return sum_embeddings / sum_mask
+    else:
+        return np.mean(token_embeddings, axis=1)
+
 
 class FinalMLP:
     def __init__(self, in_features: int = 768, hidden_dim: int = 512):
@@ -221,7 +234,9 @@ class FinalMLP:
 
         self.norm = LayerNormalization(hidden_dim)
 
-    def forward(self, x: np.ndarray) -> np.ndarray:
+    def forward(self, x: np.ndarray, attention_mask: np.ndarray = None) -> np.ndarray:
+        if x.ndim == 3:
+            x = mean_pooling(x, attention_mask)
         gate = silu(np.matmul(x, self.W_gate) + self.b_gate)
         up = np.matmul(x, self.W_up) + self.b_up
         h = np.matmul(gate * up, self.W_down) + self.b_down

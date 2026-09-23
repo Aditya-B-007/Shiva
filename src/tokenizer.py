@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 
 # =====================================================================
@@ -18,7 +18,6 @@ class BPETokenizer:
         self.token_to_id: Dict[bytes, int] = {}
         self.id_to_token: Dict[int, bytes] = {}
         
-        # Merge rules: Dict[(token_a, token_b), merged_token]
         self.merges: Dict[Tuple[bytes, bytes], bytes] = {}
         
         self._initialize_base_vocab()
@@ -33,6 +32,10 @@ class BPETokenizer:
             b_token = bytes([b])
             self.token_to_id[b_token] = offset + b
             self.id_to_token[offset + b] = b_token
+
+    @property
+    def pad_token_id(self) -> int:
+        return self.token_to_id[self.pad_token.encode("utf-8")]
 
     @property
     def vocab_size(self) -> int:
@@ -114,12 +117,39 @@ class BPETokenizer:
                 raw_bytes.extend(b_val)
         return raw_bytes.decode("utf-8", errors="replace")
 
+    def encode_batch(
+        self, 
+        texts: List[str], 
+        max_len: Optional[int] = None
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        tokenized_batch = [self.encode(text) for text in texts]
+        batch_size = len(texts)
+        if batch_size == 0:
+            return np.empty((0, 0), dtype=np.int64), np.empty((0, 0), dtype=np.float32)
+
+        actual_max_len = max(len(seq) for seq in tokenized_batch) if tokenized_batch else 0
+        seq_len = max_len if max_len is not None else actual_max_len
+        seq_len = max(seq_len, 1)
+
+        pad_id = self.pad_token_id
+        input_ids = np.full((batch_size, seq_len), fill_value=pad_id, dtype=np.int64)
+        attention_mask = np.zeros((batch_size, seq_len), dtype=np.float32)
+
+        for i, seq in enumerate(tokenized_batch):
+            trunc_seq = seq[:seq_len]
+            length = len(trunc_seq)
+            if length > 0:
+                input_ids[i, :length] = trunc_seq
+                attention_mask[i, :length] = 1.0
+
+        return input_ids, attention_mask
+
 
 # =====================================================================
-# 2. NUMPY EMBEDDING TABLE
+# 2. EMBEDDING TABLE
 # =====================================================================
 
-class NumpyEmbeddingTable:
+class EmbeddingTable:
     def __init__(self, vocab_size: int, hidden_dim: int = 768, pad_token_id: int = 0):
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
@@ -131,6 +161,10 @@ class NumpyEmbeddingTable:
 
         self.grad_weights = np.zeros_like(self.weights)
         self.last_input_ids = None
+
+    @classmethod
+    def from_tokenizer(cls, tokenizer: BPETokenizer, hidden_dim: int = 768) -> "EmbeddingTable":
+        return cls(vocab_size=tokenizer.vocab_size, hidden_dim=hidden_dim, pad_token_id=tokenizer.pad_token_id)
 
     def forward(self, input_ids: np.ndarray) -> np.ndarray:
         self.last_input_ids = input_ids
