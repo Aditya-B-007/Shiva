@@ -14,8 +14,11 @@ try:
     from src.config.config import (
         DEFAULT_TEMPERATURE,
         SIMILARITY_EPS,
+        MCTS_NUM_SIMULATIONS,
+        MCTS_C_PUCT,
         FinalHeadConfig,
     )
+    from src.transformerAndRL.RLPolicy import RLPolicy
 except ImportError:
     from Shiva.src.config.dtos import (
         CandidateOptionDTO,
@@ -30,8 +33,11 @@ except ImportError:
     from Shiva.src.config.config import (
         DEFAULT_TEMPERATURE,
         SIMILARITY_EPS,
+        MCTS_NUM_SIMULATIONS,
+        MCTS_C_PUCT,
         FinalHeadConfig,
     )
+    from Shiva.src.transformerAndRL.RLPolicy import RLPolicy
 
 __all__ = [
     "FinalHeadAndOutput",
@@ -45,15 +51,27 @@ __all__ = [
 
 
 class FinalHeadAndOutput:
-    def __init__(self, temperature: float = DEFAULT_TEMPERATURE, eps: float = SIMILARITY_EPS):
+    def __init__(
+        self,
+        temperature: float = DEFAULT_TEMPERATURE,
+        eps: float = SIMILARITY_EPS,
+        num_simulations: int = MCTS_NUM_SIMULATIONS,
+        c_puct: float = MCTS_C_PUCT
+    ):
         self.temperature = temperature
         self.eps = eps
+        self.policy = RLPolicy(
+            temperature=temperature,
+            num_simulations=num_simulations,
+            c_puct=c_puct
+        )
 
     def forward(
         self,
         situation_vector: np.ndarray,
         options_matrix: np.ndarray,
         candidate_strings: Optional[Union[List[str], List[CandidateOptionDTO], OptionMatrixRequestDTO]] = None,
+        enable_thinking: bool = False,
         query_id: Optional[str] = None
     ) -> FinalDecisionOutputDTO:
         assert situation_vector.ndim == 2 and situation_vector.shape[0] == 1, (
@@ -71,22 +89,7 @@ class FinalHeadAndOutput:
         if K == 0:
             raise ValueError("Candidate options matrix contains zero options (K=0).")
 
-        # 1. Cosine Similarity & Logits: [1, K]
-        z_norm = situation_vector / (np.linalg.norm(situation_vector, ord=2, axis=-1, keepdims=True) + self.eps)
-        cos_similarity = np.matmul(z_norm, options_matrix.T)  # Shape: [1, K]
-        logits = cos_similarity / self.temperature            # Shape: [1, K]
-
-        # 2. Numerically stable softmax: [1, K]
-        logits_max = np.max(logits, axis=-1, keepdims=True)
-        exp_logits = np.exp(logits - logits_max)
-        probabilities = exp_logits / np.sum(exp_logits, axis=-1, keepdims=True)  # Shape: [1, K]
-
-        # Flatten 1D views of length K
-        probs_flat = probabilities[0]
-        logits_flat = logits[0]
-        cos_flat = cos_similarity[0]
-
-        # 3. Resolve candidate texts, IDs, and query_id
+        # 1. Resolve candidate texts, IDs, and query_id
         resolved_query_id = query_id
         option_texts = [f"Option {i + 1}" for i in range(K)]
         option_ids = [f"opt_{i + 1}" for i in range(K)]
@@ -104,7 +107,25 @@ class FinalHeadAndOutput:
                 else:
                     option_texts[i] = str(item)
 
-        # 4. Ranking & Metrics
+        rl_output = self.policy.evaluate(
+            situation_vector=situation_vector,
+            options_matrix=options_matrix,
+            candidate_strings=option_texts,
+            enable_thinking=enable_thinking
+        )
+
+        probabilities = rl_output.probabilities  # Shape: [1, K]
+        logits = rl_output.logits                # Shape: [1, K]
+
+        z_norm = situation_vector / (np.linalg.norm(situation_vector, ord=2, axis=-1, keepdims=True) + self.eps)
+        m_norm = options_matrix / (np.linalg.norm(options_matrix, ord=2, axis=-1, keepdims=True) + self.eps)
+        cos_similarity = np.matmul(z_norm, m_norm.T)  # Shape: [1, K]
+
+        # Flatten 1D views of length K
+        probs_flat = probabilities[0]
+        logits_flat = logits[0]
+        cos_flat = cos_similarity[0]
+
         sorted_indices = np.argsort(-probs_flat)
         best_idx = int(sorted_indices[0])
         runner_up_idx = int(sorted_indices[1]) if K > 1 else None
@@ -115,7 +136,6 @@ class FinalHeadAndOutput:
         entropy = -float(np.sum(probs_flat * np.log(probs_flat + self.eps)))
         entropy = max(0.0, entropy)
 
-        # 5. Build Sub-DTOs
         selected_action = SelectedActionDTO(
             rank=1,
             index=best_idx,
