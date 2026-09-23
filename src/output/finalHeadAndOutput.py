@@ -1,15 +1,27 @@
 import numpy as np
 from typing import List, Optional, Union
-from src.dtos import (
-    CandidateOptionDTO,
-    OptionMatrixRequestDTO,
-    OptionScoreDTO,
-    SelectedActionDTO,
-    DecisionMetricsDTO,
-    DecisionDistributionDTO,
-    FinalDecisionOutputDTO,
-    DecisionResultDTO
-)
+try:
+    from src.config.dtos import (
+        CandidateOptionDTO,
+        OptionMatrixRequestDTO,
+        OptionScoreDTO,
+        SelectedActionDTO,
+        DecisionMetricsDTO,
+        DecisionDistributionDTO,
+        FinalDecisionOutputDTO,
+        DecisionResultDTO
+    )
+except ImportError:
+    from Shiva.src.config.dtos import (
+        CandidateOptionDTO,
+        OptionMatrixRequestDTO,
+        OptionScoreDTO,
+        SelectedActionDTO,
+        DecisionMetricsDTO,
+        DecisionDistributionDTO,
+        FinalDecisionOutputDTO,
+        DecisionResultDTO
+    )
 
 __all__ = [
     "FinalHeadAndOutput",

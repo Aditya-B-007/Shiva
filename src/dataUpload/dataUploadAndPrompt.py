@@ -1,6 +1,9 @@
 from typing import Optional
 from PyPDF2 import PdfReader
-from src.dtos import UserPromptDTO, DataUploadDTO
+try:
+    from src.config.dtos import UserPromptDTO, DataUploadDTO
+except ImportError:
+    from Shiva.src.config.dtos import UserPromptDTO, DataUploadDTO
 
 #=======PDF Processor=====================
 class PdfProcessor:

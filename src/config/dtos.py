@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -168,3 +168,27 @@ class FinalDecisionOutputDTO(BaseModel):
 
 # Backwards compatibility alias
 DecisionResultDTO = FinalDecisionOutputDTO
+
+
+# =====================================================================
+# 5. Reinforcement Learning Policy DTOs
+# =====================================================================
+
+class ScoredActionDTO(BaseModel):
+    """Scored candidate action produced during RL policy evaluation."""
+    rank: int = Field(..., ge=1, description="1-based rank")
+    action_index: int = Field(..., ge=0, description="Index in options matrix")
+    action_text: str = Field(..., description="Action text description")
+    probability: float = Field(..., ge=0.0, le=1.0, description="Action probability")
+    logit: float = Field(..., description="Action logit score")
+
+
+class DecisionOutputDTO(BaseModel):
+    """Output from RLPolicy evaluation containing decision probabilities and ranked actions."""
+    model_config = {"arbitrary_types_allowed": True}
+
+    probabilities: Any = Field(..., description="Action probability distribution (array or list)")
+    logits: Any = Field(..., description="Action logits (array or list)")
+    best_action_idx: int = Field(..., ge=0, description="Winning action index")
+    best_action_text: Optional[str] = Field(default=None, description="Winning action text")
+    ranked_actions: List[ScoredActionDTO] = Field(default_factory=list, description="Ranked list of evaluated actions")

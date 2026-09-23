@@ -2,7 +2,10 @@ import re
 from typing import List, Optional, Set
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from src.dtos import RetrievedChunkDTO, RetrievalResponseDTO
+try:
+    from src.config.dtos import RetrievedChunkDTO, RetrievalResponseDTO
+except ImportError:
+    from Shiva.src.config.dtos import RetrievedChunkDTO, RetrievalResponseDTO
 
 __all__ = ["RetrievedChunkDTO", "RetrievalResponseDTO", "PromptSpecificRetriever"]
 
