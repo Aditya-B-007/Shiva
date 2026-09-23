@@ -4,8 +4,28 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 try:
     from src.config.dtos import RetrievedChunkDTO, RetrievalResponseDTO
+    from src.config.config import (
+        RAG_MAX_WORDS,
+        RAG_OVERLAP,
+        RAG_MIN_NGRAM,
+        RAG_MAX_NGRAM,
+        RAG_DEFAULT_TOP_K,
+        RAG_KEYWORD_WEIGHT,
+        RAG_SUBLINEAR_TF,
+        RAGConfig,
+    )
 except ImportError:
     from Shiva.src.config.dtos import RetrievedChunkDTO, RetrievalResponseDTO
+    from Shiva.src.config.config import (
+        RAG_MAX_WORDS,
+        RAG_OVERLAP,
+        RAG_MIN_NGRAM,
+        RAG_MAX_NGRAM,
+        RAG_DEFAULT_TOP_K,
+        RAG_KEYWORD_WEIGHT,
+        RAG_SUBLINEAR_TF,
+        RAGConfig,
+    )
 
 __all__ = ["RetrievedChunkDTO", "RetrievalResponseDTO", "PromptSpecificRetriever"]
 
@@ -13,10 +33,10 @@ class PromptSpecificRetriever:
     def __init__(
         self,
         text: str,
-        max_words: int = 60,
-        overlap: int = 15,
-        min_ngram: int = 1,
-        max_ngram: int = 3, 
+        max_words: int = RAG_MAX_WORDS,
+        overlap: int = RAG_OVERLAP,
+        min_ngram: int = RAG_MIN_NGRAM,
+        max_ngram: int = RAG_MAX_NGRAM, 
     ):
         self.min_ngram = min_ngram
         self.max_ngram = max_ngram
@@ -88,7 +108,12 @@ class PromptSpecificRetriever:
                 phrases.add(" ".join(tokens[i : i + size]))
         return phrases
 
-    def retrieve(self, query: str, top_k: int = 3, keyword_weight: float = 0.5) -> List[RetrievedChunkDTO]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = RAG_DEFAULT_TOP_K,
+        keyword_weight: float = RAG_KEYWORD_WEIGHT
+    ) -> List[RetrievedChunkDTO]:
         if not self.chunks or not query or not query.strip():
             return []
 

@@ -2,8 +2,10 @@ from typing import Optional
 from PyPDF2 import PdfReader
 try:
     from src.config.dtos import UserPromptDTO, DataUploadDTO
+    from src.config.config import ModelConfig, default_config
 except ImportError:
     from Shiva.src.config.dtos import UserPromptDTO, DataUploadDTO
+    from Shiva.src.config.config import ModelConfig, default_config
 
 #=======PDF Processor=====================
 class PdfProcessor:

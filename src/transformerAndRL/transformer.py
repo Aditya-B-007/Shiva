@@ -1,4 +1,30 @@
 import numpy as np
+try:
+    from src.config.config import (
+        HIDDEN_DIM,
+        NUM_LAYERS,
+        NUM_HEADS,
+        HEAD_DIM,
+        FFN_DIM,
+        SITUATION_DIM,
+        ROPE_THETA,
+        LAYER_NORM_EPS,
+        SILU_CLIP_BOUND,
+        TransformerConfig,
+    )
+except ImportError:
+    from Shiva.src.config.config import (
+        HIDDEN_DIM,
+        NUM_LAYERS,
+        NUM_HEADS,
+        HEAD_DIM,
+        FFN_DIM,
+        SITUATION_DIM,
+        ROPE_THETA,
+        LAYER_NORM_EPS,
+        SILU_CLIP_BOUND,
+        TransformerConfig,
+    )
 
 # =====================================================================
 # 1. CORE MATHEMATICAL & ROPE PRIMITIVES
@@ -11,10 +37,10 @@ def softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
 
 
 def silu(x: np.ndarray) -> np.ndarray:
-    return x / (1.0 + np.exp(-np.clip(x, -30.0, 30.0)))
+    return x / (1.0 + np.exp(-np.clip(x, -SILU_CLIP_BOUND, SILU_CLIP_BOUND)))
 
 
-def precompute_rope_frequencies(head_dim: int, seq_len: int, theta: float = 10000.0):
+def precompute_rope_frequencies(head_dim: int = HEAD_DIM, seq_len: int = 512, theta: float = ROPE_THETA):
     channel_indices = np.arange(0, head_dim, 2, dtype=np.float32)
     inv_freq = 1.0 / (theta ** (channel_indices / head_dim))  
     
@@ -39,7 +65,7 @@ def apply_rope(x: np.ndarray, cos: np.ndarray, sin: np.ndarray) -> np.ndarray:
 
 
 class LayerNormalization:
-    def __init__(self, hidden_dim: int = 768, eps: float = 1e-12):
+    def __init__(self, hidden_dim: int = HIDDEN_DIM, eps: float = LAYER_NORM_EPS):
         self.eps = eps
         self.gamma = np.ones(hidden_dim, dtype=np.float32)
         self.beta = np.zeros(hidden_dim, dtype=np.float32)
@@ -56,7 +82,7 @@ class LayerNormalization:
 # =====================================================================
 
 class MultiHeadAttention:
-    def __init__(self, hidden_dim: int = 768, num_heads: int = 12):
+    def __init__(self, hidden_dim: int = HIDDEN_DIM, num_heads: int = NUM_HEADS):
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads  # 768 // 12 = 64
@@ -127,7 +153,7 @@ class MultiHeadAttention:
 # =====================================================================
 
 class FeedForwardNetwork:
-    def __init__(self, hidden_dim: int = 768, ffn_dim: int = 3072):
+    def __init__(self, hidden_dim: int = HIDDEN_DIM, ffn_dim: int = FFN_DIM):
         scale_in = np.sqrt(2.0 / (hidden_dim + ffn_dim))
         scale_out = np.sqrt(2.0 / (ffn_dim + hidden_dim))
         
@@ -151,7 +177,7 @@ class FeedForwardNetwork:
 # =====================================================================
 
 class TransformerEncoderLayer:
-    def __init__(self, hidden_dim: int = 768, num_heads: int = 12, ffn_dim: int = 3072):
+    def __init__(self, hidden_dim: int = HIDDEN_DIM, num_heads: int = NUM_HEADS, ffn_dim: int = FFN_DIM):
         self.attention = MultiHeadAttention(hidden_dim, num_heads)
         self.norm1 = LayerNormalization(hidden_dim)
         self.ffn = FeedForwardNetwork(hidden_dim, ffn_dim)
@@ -179,10 +205,10 @@ class TransformerEncoderLayer:
 class BidirectionalEncoderStack:
     def __init__(
         self,
-        num_layers: int = 12,
-        hidden_dim: int = 768,
-        num_heads: int = 12,
-        ffn_dim: int = 3072
+        num_layers: int = NUM_LAYERS,
+        hidden_dim: int = HIDDEN_DIM,
+        num_heads: int = NUM_HEADS,
+        ffn_dim: int = FFN_DIM
     ):
         self.num_layers = num_layers
         self.head_dim = hidden_dim // num_heads
@@ -219,7 +245,7 @@ def mean_pooling(token_embeddings: np.ndarray, attention_mask: np.ndarray = None
 
 
 class FinalMLP:
-    def __init__(self, in_features: int = 768, hidden_dim: int = 512):
+    def __init__(self, in_features: int = HIDDEN_DIM, hidden_dim: int = SITUATION_DIM):
         scale_in = np.sqrt(2.0 / (in_features + hidden_dim))
         scale_out = np.sqrt(2.0 / (hidden_dim + hidden_dim))
 

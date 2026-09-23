@@ -1,5 +1,29 @@
 import numpy as np
 from typing import List, Dict, Tuple, Optional
+try:
+    from src.config.config import (
+        PAD_TOKEN,
+        UNK_TOKEN,
+        BOS_TOKEN,
+        EOS_TOKEN,
+        PAD_TOKEN_ID,
+        HIDDEN_DIM,
+        DEFAULT_VOCAB_SIZE,
+        MIN_MERGE_FREQUENCY,
+        TokenizerConfig,
+    )
+except ImportError:
+    from Shiva.src.config.config import (
+        PAD_TOKEN,
+        UNK_TOKEN,
+        BOS_TOKEN,
+        EOS_TOKEN,
+        PAD_TOKEN_ID,
+        HIDDEN_DIM,
+        DEFAULT_VOCAB_SIZE,
+        MIN_MERGE_FREQUENCY,
+        TokenizerConfig,
+    )
 
 
 # =====================================================================
@@ -9,10 +33,10 @@ from typing import List, Dict, Tuple, Optional
 class BPETokenizer:
     def __init__(self):
         # Reserved Special Tokens
-        self.pad_token = "<pad>"
-        self.unk_token = "<unk>"
-        self.bos_token = "<s>"
-        self.eos_token = "</s>"
+        self.pad_token = PAD_TOKEN
+        self.unk_token = UNK_TOKEN
+        self.bos_token = BOS_TOKEN
+        self.eos_token = EOS_TOKEN
         
         self.special_tokens = [self.pad_token, self.unk_token, self.bos_token, self.eos_token]
         self.token_to_id: Dict[bytes, int] = {}
@@ -66,7 +90,7 @@ class BPETokenizer:
                 i += 1
         return new_seq
 
-    def train(self, corpus: List[str], target_vocab_size: int = 1000):
+    def train(self, corpus: List[str], target_vocab_size: int = DEFAULT_VOCAB_SIZE):
         token_sequences: List[List[bytes]] = [
             [bytes([b]) for b in text.encode("utf-8")]
             for text in corpus
@@ -78,9 +102,8 @@ class BPETokenizer:
             if not stats:
                 break
 
-
             best_pair = max(stats, key=stats.get)
-            if stats[best_pair] < 2:
+            if stats[best_pair] < MIN_MERGE_FREQUENCY:
                 # No common pairs remaining
                 break
 
@@ -150,7 +173,7 @@ class BPETokenizer:
 # =====================================================================
 
 class EmbeddingTable:
-    def __init__(self, vocab_size: int, hidden_dim: int = 768, pad_token_id: int = 0):
+    def __init__(self, vocab_size: int, hidden_dim: int = HIDDEN_DIM, pad_token_id: int = PAD_TOKEN_ID):
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
         self.pad_token_id = pad_token_id
@@ -163,7 +186,7 @@ class EmbeddingTable:
         self.last_input_ids = None
 
     @classmethod
-    def from_tokenizer(cls, tokenizer: BPETokenizer, hidden_dim: int = 768) -> "EmbeddingTable":
+    def from_tokenizer(cls, tokenizer: BPETokenizer, hidden_dim: int = HIDDEN_DIM) -> "EmbeddingTable":
         return cls(vocab_size=tokenizer.vocab_size, hidden_dim=hidden_dim, pad_token_id=tokenizer.pad_token_id)
 
     def forward(self, input_ids: np.ndarray) -> np.ndarray:

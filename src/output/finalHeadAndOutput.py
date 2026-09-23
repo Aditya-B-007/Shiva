@@ -11,6 +11,11 @@ try:
         FinalDecisionOutputDTO,
         DecisionResultDTO
     )
+    from src.config.config import (
+        DEFAULT_TEMPERATURE,
+        SIMILARITY_EPS,
+        FinalHeadConfig,
+    )
 except ImportError:
     from Shiva.src.config.dtos import (
         CandidateOptionDTO,
@@ -21,6 +26,11 @@ except ImportError:
         DecisionDistributionDTO,
         FinalDecisionOutputDTO,
         DecisionResultDTO
+    )
+    from Shiva.src.config.config import (
+        DEFAULT_TEMPERATURE,
+        SIMILARITY_EPS,
+        FinalHeadConfig,
     )
 
 __all__ = [
@@ -35,8 +45,9 @@ __all__ = [
 
 
 class FinalHeadAndOutput:
-    def __init__(self, temperature: float = 0.07):
+    def __init__(self, temperature: float = DEFAULT_TEMPERATURE, eps: float = SIMILARITY_EPS):
         self.temperature = temperature
+        self.eps = eps
 
     def forward(
         self,
@@ -61,8 +72,7 @@ class FinalHeadAndOutput:
             raise ValueError("Candidate options matrix contains zero options (K=0).")
 
         # 1. Cosine Similarity & Logits: [1, K]
-        eps = 1e-12
-        z_norm = situation_vector / (np.linalg.norm(situation_vector, ord=2, axis=-1, keepdims=True) + eps)
+        z_norm = situation_vector / (np.linalg.norm(situation_vector, ord=2, axis=-1, keepdims=True) + self.eps)
         cos_similarity = np.matmul(z_norm, options_matrix.T)  # Shape: [1, K]
         logits = cos_similarity / self.temperature            # Shape: [1, K]
 
@@ -102,7 +112,7 @@ class FinalHeadAndOutput:
         margin = float(probs_flat[best_idx] - runner_up_prob) if runner_up_prob is not None else 1.0
 
         # Shannon entropy H = -sum(p * log(p + eps))
-        entropy = -float(np.sum(probs_flat * np.log(probs_flat + eps)))
+        entropy = -float(np.sum(probs_flat * np.log(probs_flat + self.eps)))
         entropy = max(0.0, entropy)
 
         # 5. Build Sub-DTOs

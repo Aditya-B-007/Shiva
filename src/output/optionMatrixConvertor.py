@@ -1,19 +1,37 @@
 import numpy as np
-from typing import List
+from typing import List, Union, Optional
+try:
+    from src.config.config import (
+        OPTION_EMBED_DIM,
+        OPTION_OUT_DIM,
+        OPTION_PROJ_SEED,
+        OPTION_NORM_EPS,
+        OptionConverterConfig,
+    )
+except ImportError:
+    from Shiva.src.config.config import (
+        OPTION_EMBED_DIM,
+        OPTION_OUT_DIM,
+        OPTION_PROJ_SEED,
+        OPTION_NORM_EPS,
+        OptionConverterConfig,
+    )
 
 class OptionMatrixConvertor:
     def __init__(
         self,
         tokenizer,
         embedder,
-        hidden_dim: int = 768,
-        out_dim: int = 512,
-        seed: int = 42
+        hidden_dim: int = OPTION_EMBED_DIM,
+        out_dim: int = OPTION_OUT_DIM,
+        seed: int = OPTION_PROJ_SEED,
+        eps: float = OPTION_NORM_EPS
     ):
         self.tokenizer = tokenizer
         self.embedder = embedder
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim
+        self.eps = eps
 
         rng = np.random.RandomState(seed)
         scale = np.sqrt(2.0 / (hidden_dim + out_dim))
@@ -61,8 +79,7 @@ class OptionMatrixConvertor:
         projected = np.matmul(pooled_vectors, self.W_proj) + self.b_proj
 
         # 6. Radial L2 Normalization onto the unit sphere S^511
-        eps = 1e-12
-        norms = np.linalg.norm(projected, ord=2, axis=-1, keepdims=True) + eps
+        norms = np.linalg.norm(projected, ord=2, axis=-1, keepdims=True) + self.eps
         options_matrix = projected / norms
 
         return options_matrix.astype(np.float32)

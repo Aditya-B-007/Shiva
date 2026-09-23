@@ -2,8 +2,24 @@ import numpy as np
 from typing import List, Optional, Dict, Tuple
 try:
     from src.config.dtos import DecisionOutputDTO, ScoredActionDTO
+    from src.config.config import (
+        DEFAULT_TEMPERATURE,
+        MCTS_NUM_SIMULATIONS,
+        MCTS_C_PUCT,
+        MCTS_DIRICHLET_ALPHA,
+        MCTS_DIRICHLET_WEIGHT,
+        RLPolicyConfig,
+    )
 except ImportError:
     from Shiva.src.config.dtos import DecisionOutputDTO, ScoredActionDTO
+    from Shiva.src.config.config import (
+        DEFAULT_TEMPERATURE,
+        MCTS_NUM_SIMULATIONS,
+        MCTS_C_PUCT,
+        MCTS_DIRICHLET_ALPHA,
+        MCTS_DIRICHLET_WEIGHT,
+        RLPolicyConfig,
+    )
 
 
 class MCTSNode:
@@ -18,10 +34,10 @@ class MCTSNode:
 class MCTSSearch:
     def __init__(
         self,
-        num_simulations: int = 64,
-        c_puct: float = 1.414,
-        dirichlet_alpha: float = 0.3,
-        dirichlet_weight: float = 0.25
+        num_simulations: int = MCTS_NUM_SIMULATIONS,
+        c_puct: float = MCTS_C_PUCT,
+        dirichlet_alpha: float = MCTS_DIRICHLET_ALPHA,
+        dirichlet_weight: float = MCTS_DIRICHLET_WEIGHT
     ):
         self.num_simulations = num_simulations
         self.c_puct = c_puct
@@ -78,9 +94,9 @@ class MCTSSearch:
 class RLPolicy:
     def __init__(
         self,
-        temperature: float = 0.07,
-        num_simulations: int = 64,
-        c_puct: float = 1.414
+        temperature: float = DEFAULT_TEMPERATURE,
+        num_simulations: int = MCTS_NUM_SIMULATIONS,
+        c_puct: float = MCTS_C_PUCT
     ):
         self.temperature = temperature
         self.mcts = MCTSSearch(num_simulations=num_simulations, c_puct=c_puct)
