@@ -130,6 +130,60 @@ class BPETokenizer:
         unk_id = self.token_to_id[self.unk_token.encode("utf-8")]
         return [self.token_to_id.get(tok, unk_id) for tok in tokens]
 
+    def train_from_file(self, file_path: str, target_vocab_size: int = DEFAULT_VOCAB_SIZE) -> None:
+        """Reads a text file line-by-line and trains the BPE tokenizer."""
+        with open(file_path, "r", encoding="utf-8") as f:
+            corpus = [line.strip() for line in f if line.strip()]
+        self.train(corpus, target_vocab_size=target_vocab_size)
+
+    def save(self, filepath: str) -> None:
+        """Saves learned merges, vocabulary, and special tokens to a JSON file."""
+        import json
+        import os
+        os.makedirs(os.path.dirname(filepath), exist_ok=True) if os.path.dirname(filepath) else None
+        
+        # Serialize merges as list of [[b1_hex, b2_hex], merged_hex]
+        serialized_merges = [
+            [[p[0].hex(), p[1].hex()], m.hex()]
+            for p, m in self.merges.items()
+        ]
+        # Serialize token_to_id as hex -> id
+        serialized_vocab = {
+            tok.hex(): idx for tok, idx in self.token_to_id.items()
+        }
+        data = {
+            "special_tokens": self.special_tokens,
+            "vocab_size": self.vocab_size,
+            "merges": serialized_merges,
+            "token_to_id": serialized_vocab
+        }
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+    def load(self, filepath: str) -> None:
+        """Loads merges and vocabulary from a saved JSON file."""
+        import json
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        self.special_tokens = data["special_tokens"]
+        self.pad_token = self.special_tokens[0]
+        self.unk_token = self.special_tokens[1]
+        self.bos_token = self.special_tokens[2]
+        self.eos_token = self.special_tokens[3]
+
+        self.merges = {}
+        for (p0_hex, p1_hex), m_hex in data["merges"]:
+            pair = (bytes.fromhex(p0_hex), bytes.fromhex(p1_hex))
+            self.merges[pair] = bytes.fromhex(m_hex)
+
+        self.token_to_id = {
+            bytes.fromhex(k_hex): idx for k_hex, idx in data["token_to_id"].items()
+        }
+        self.id_to_token = {
+            idx: tok for tok, idx in self.token_to_id.items()
+        }
+
     def decode(self, token_ids: List[int]) -> str:
         raw_bytes = bytearray()
         for tid in token_ids:

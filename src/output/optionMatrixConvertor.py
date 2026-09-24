@@ -74,12 +74,15 @@ class OptionMatrixConvertor:
         sum_embeddings = np.sum(embeddings * mask_expanded, axis=1)
         sum_mask = np.clip(np.sum(mask_expanded, axis=1), a_min=1e-9, a_max=None)
         pooled_vectors = sum_embeddings / sum_mask  # [K, 768]
+        self._last_pooled = pooled_vectors
 
         # 5. Linear Projection: [K, 768] @ [768, 512] -> [K, 512]
         projected = np.matmul(pooled_vectors, self.W_proj) + self.b_proj
+        self._last_projected = projected
 
         # 6. Radial L2 Normalization onto the unit sphere S^511
         norms = np.linalg.norm(projected, ord=2, axis=-1, keepdims=True) + self.eps
+        self._last_norms = norms
         options_matrix = projected / norms
 
         return options_matrix.astype(np.float32)
