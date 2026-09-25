@@ -184,6 +184,17 @@ class BPETokenizer:
             idx: tok for tok, idx in self.token_to_id.items()
         }
 
+    def load_from_json(self, filepath: str) -> None:
+        """Alias for load() to load vocabulary and merges from JSON file."""
+        self.load(filepath)
+
+    @classmethod
+    def from_json(cls, filepath: str) -> "BPETokenizer":
+        """Instantiates and loads a BPETokenizer from a saved JSON file."""
+        tokenizer = cls()
+        tokenizer.load_from_json(filepath)
+        return tokenizer
+
     def decode(self, token_ids: List[int]) -> str:
         raw_bytes = bytearray()
         for tid in token_ids:
@@ -227,12 +238,19 @@ class BPETokenizer:
 # =====================================================================
 
 class EmbeddingTable:
-    def __init__(self, vocab_size: int, hidden_dim: int = HIDDEN_DIM, pad_token_id: int = PAD_TOKEN_ID):
+    def __init__(
+        self,
+        vocab_size: int,
+        hidden_dim: int = HIDDEN_DIM,
+        pad_token_id: int = PAD_TOKEN_ID,
+        seed: Optional[int] = None
+    ):
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
         self.pad_token_id = pad_token_id
         scale = 1.0 / np.sqrt(hidden_dim)
-        self.weights = np.random.normal(loc=0.0, scale=scale, size=(vocab_size, hidden_dim)).astype(np.float32)
+        rng = np.random.RandomState(seed) if seed is not None else np.random
+        self.weights = rng.normal(loc=0.0, scale=scale, size=(vocab_size, hidden_dim)).astype(np.float32)
         if pad_token_id is not None:
             self.weights[pad_token_id] = 0.0
 
@@ -240,8 +258,18 @@ class EmbeddingTable:
         self.last_input_ids = None
 
     @classmethod
-    def from_tokenizer(cls, tokenizer: BPETokenizer, hidden_dim: int = HIDDEN_DIM) -> "EmbeddingTable":
-        return cls(vocab_size=tokenizer.vocab_size, hidden_dim=hidden_dim, pad_token_id=tokenizer.pad_token_id)
+    def from_tokenizer(
+        cls,
+        tokenizer: BPETokenizer,
+        hidden_dim: int = HIDDEN_DIM,
+        seed: Optional[int] = None
+    ) -> "EmbeddingTable":
+        return cls(
+            vocab_size=tokenizer.vocab_size,
+            hidden_dim=hidden_dim,
+            pad_token_id=tokenizer.pad_token_id,
+            seed=seed
+        )
 
     def forward(self, input_ids: np.ndarray) -> np.ndarray:
         self.last_input_ids = input_ids
@@ -253,3 +281,15 @@ class EmbeddingTable:
         
         if self.pad_token_id is not None:
             self.grad_weights[self.pad_token_id] = 0.0
+
+    def get_weights(self) -> Dict[str, np.ndarray]:
+        """Returns the embedding weights dictionary."""
+        return {"embedding_weights": self.weights.copy()}
+
+    def set_weights(self, weights: Dict[str, np.ndarray]) -> None:
+        """Sets the embedding weights from dictionary."""
+        if "embedding_weights" in weights:
+            self.weights = weights["embedding_weights"].astype(np.float32)
+            self.vocab_size = self.weights.shape[0]
+            self.hidden_dim = self.weights.shape[1]
+            self.grad_weights = np.zeros_like(self.weights)

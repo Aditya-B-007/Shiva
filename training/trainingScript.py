@@ -216,25 +216,40 @@ class TrainingPipeline:
             print(f" [Stage 2 - Epoch {epoch + 1}/{epochs}] Calibration Loss: {avg_loss:.4f}")
         return history
 
-    def save_checkpoint(self, filepath: str) -> None:
+    def save_checkpoint(
+        self,
+        filepath: str,
+        encoder: Optional[BidirectionalEncoderStack] = None,
+        embedder: Optional[EmbeddingTable] = None
+    ) -> None:
         """Saves model weights and calibration heads to a compressed npz archive."""
         os.makedirs(os.path.dirname(filepath), exist_ok=True) if os.path.dirname(filepath) else None
-        np.savez_compressed(
-            filepath,
-            mlp_W_gate=self.final_mlp.W_gate,
-            mlp_b_gate=self.final_mlp.b_gate,
-            mlp_W_up=self.final_mlp.W_up,
-            mlp_b_up=self.final_mlp.b_up,
-            mlp_W_down=self.final_mlp.W_down,
-            mlp_b_down=self.final_mlp.b_down,
-            opt_W_proj=self.option_convertor.W_proj,
-            opt_b_proj=self.option_convertor.b_proj,
-            cal_W=self.rlcd_trainer.W_cal,
-            cal_b=self.rlcd_trainer.b_cal
-        )
+        save_dict = {
+            "mlp_W_gate": self.final_mlp.W_gate,
+            "mlp_b_gate": self.final_mlp.b_gate,
+            "mlp_W_up": self.final_mlp.W_up,
+            "mlp_b_up": self.final_mlp.b_up,
+            "mlp_W_down": self.final_mlp.W_down,
+            "mlp_b_down": self.final_mlp.b_down,
+            "opt_W_proj": self.option_convertor.W_proj,
+            "opt_b_proj": self.option_convertor.b_proj,
+            "cal_W": self.rlcd_trainer.W_cal,
+            "cal_b": self.rlcd_trainer.b_cal
+        }
+        if encoder is not None:
+            save_dict.update(encoder.get_weights())
+        if embedder is not None:
+            save_dict.update(embedder.get_weights())
+
+        np.savez_compressed(filepath, **save_dict)
         print(f"[✓] Checkpoint successfully saved to: {filepath}")
 
-    def load_checkpoint(self, filepath: str) -> None:
+    def load_checkpoint(
+        self,
+        filepath: str,
+        encoder: Optional[BidirectionalEncoderStack] = None,
+        embedder: Optional[EmbeddingTable] = None
+    ) -> None:
         """Loads weights from disk."""
         data = np.load(filepath)
         self.final_mlp.W_gate = data["mlp_W_gate"]
@@ -247,6 +262,12 @@ class TrainingPipeline:
         self.option_convertor.b_proj = data["opt_b_proj"]
         self.rlcd_trainer.W_cal = data["cal_W"]
         self.rlcd_trainer.b_cal = data["cal_b"]
+
+        if encoder is not None:
+            encoder.set_weights(data)
+        if embedder is not None and "embedding_weights" in data:
+            embedder.set_weights({"embedding_weights": data["embedding_weights"]})
+
         print(f"[✓] Checkpoint successfully loaded from: {filepath}")
 
     def predict(
@@ -283,11 +304,9 @@ def main():
     print("      SANKALPA (110M): END-TO-END ONE-CLICK TRAINING")
     print("=" * 65)
 
-    if not os.path.exists(TOKENIZER_RAW_DATA):
-        raise FileNotFoundError(
-            f"Tokenizer raw data file not found at: '{TOKENIZER_RAW_DATA}'. "
-            f"Please create '{TOKENIZER_RAW_DATA}' with your raw corpus text."
-        )
+    # Set fixed seed for deterministic reproducibility across all runs
+    SEED = 42
+    np.random.seed(SEED)
 
     if not os.path.exists(MODEL_TRAIN_DATA):
         raise FileNotFoundError(
@@ -295,19 +314,29 @@ def main():
             f"Please create '{MODEL_TRAIN_DATA}' in JSONL format."
         )
 
-    # 1. Tokenizer Training
-    print(f"\n[Step 1/5] Training BPETokenizer on raw text: {TOKENIZER_RAW_DATA}...")
+    # 1. Tokenizer Setup (Load if exists, otherwise train)
     tokenizer = BPETokenizer()
-    tokenizer.train_from_file(TOKENIZER_RAW_DATA, target_vocab_size=TARGET_VOCAB_SIZE)
-    tokenizer.save(TOKENIZER_OUT_PATH)
-    print(f"[✓] Tokenizer trained (Vocab Size: {tokenizer.vocab_size}) and saved to: {TOKENIZER_OUT_PATH}")
+    if os.path.exists(TOKENIZER_OUT_PATH):
+        print(f"\n[Step 1/5] Loading existing BPETokenizer from: {TOKENIZER_OUT_PATH}...")
+        tokenizer.load_from_json(TOKENIZER_OUT_PATH)
+        print(f"[✓] Tokenizer loaded (Vocab Size: {tokenizer.vocab_size})")
+    else:
+        if not os.path.exists(TOKENIZER_RAW_DATA):
+            raise FileNotFoundError(
+                f"Tokenizer raw data file not found at: '{TOKENIZER_RAW_DATA}'. "
+                f"Please create '{TOKENIZER_RAW_DATA}' with your raw corpus text."
+            )
+        print(f"\n[Step 1/5] Training BPETokenizer on raw text: {TOKENIZER_RAW_DATA}...")
+        tokenizer.train_from_file(TOKENIZER_RAW_DATA, target_vocab_size=TARGET_VOCAB_SIZE)
+        tokenizer.save(TOKENIZER_OUT_PATH)
+        print(f"[✓] Tokenizer trained (Vocab Size: {tokenizer.vocab_size}) and saved to: {TOKENIZER_OUT_PATH}")
 
     # 2. Synchronize Embedder and Model Components
-    print(f"\n[Step 2/5] Initializing synchronized model architecture...")
-    embedder = EmbeddingTable.from_tokenizer(tokenizer)
-    encoder = BidirectionalEncoderStack()
-    final_mlp = FinalMLP()
-    option_convertor = OptionMatrixConvertor(tokenizer=tokenizer, embedder=embedder)
+    print(f"\n[Step 2/5] Initializing synchronized model architecture (seed={SEED})...")
+    embedder = EmbeddingTable.from_tokenizer(tokenizer, seed=SEED)
+    encoder = BidirectionalEncoderStack(seed=SEED)
+    final_mlp = FinalMLP(seed=SEED)
+    option_convertor = OptionMatrixConvertor(tokenizer=tokenizer, embedder=embedder, seed=SEED)
 
     pipeline = TrainingPipeline(
         final_mlp=final_mlp,
@@ -336,9 +365,9 @@ def main():
     )
     pipeline.run_stage2_rlcd(rlcd_samples, epochs=RLCD_EPOCHS)
 
-    # 5. Save Checkpoint
+    # 5. Save Checkpoint (Including Backbone & Embedder)
     print(f"\n[Step 5/5] Preserving model weights checkpoint...")
-    pipeline.save_checkpoint(CHECKPOINT_OUT_PATH)
+    pipeline.save_checkpoint(CHECKPOINT_OUT_PATH, encoder=encoder, embedder=embedder)
 
     # 6. Post-Training Validation Decision Test
     print(f"\n=======================================================")

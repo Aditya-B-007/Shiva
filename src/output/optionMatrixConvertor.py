@@ -38,6 +38,10 @@ class OptionMatrixConvertor:
         self.W_proj = rng.randn(hidden_dim, out_dim).astype(np.float32) * scale
         self.b_proj = np.zeros(out_dim, dtype=np.float32)
 
+        self._last_pooled: Optional[np.ndarray] = None
+        self._last_projected: Optional[np.ndarray] = None
+        self._last_norms: Optional[np.ndarray] = None
+
     def convert(self, action_strings: List[str]) -> np.ndarray:
         if hasattr(action_strings, "options"):
             action_strings = [opt.text for opt in action_strings.options]
@@ -46,6 +50,9 @@ class OptionMatrixConvertor:
 
         K = len(action_strings)
         if K == 0:
+            self._last_pooled = np.empty((0, self.hidden_dim), dtype=np.float32)
+            self._last_projected = np.empty((0, self.out_dim), dtype=np.float32)
+            self._last_norms = np.empty((0, 1), dtype=np.float32)
             return np.empty((0, self.out_dim), dtype=np.float32)
 
         # 1. Tokenize all action strings
