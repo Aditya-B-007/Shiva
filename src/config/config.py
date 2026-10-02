@@ -9,8 +9,8 @@ from typing import Dict, Any
 # Model Dimensions
 HIDDEN_DIM: int = 768                     # Feature width d_model
 NUM_LAYERS: int = 12                     # 12-layer bidirectional encoder stack
-NUM_HEADS: int = 12                      # Multi-head attention heads
-HEAD_DIM: int = 64                       # Per-head width (768 // 12 = 64)
+NUM_HEADS: int = 4                      # Multi-head attention heads
+HEAD_DIM: int = 192                       # Per-head width (768 // 12 = 64)
 FFN_DIM: int = 3072                      # SwiGLU expansion width (4 * 768)
 MAX_CONTEXT_LENGTH: int = 512            # Maximum context window length
 SITUATION_DIM: int = 512                 # Compressed decision state width z in R^512

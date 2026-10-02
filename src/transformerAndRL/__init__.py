@@ -1,4 +1,5 @@
-from src.transformerAndRL.tokenizer import BPETokenizer, EmbeddingTable
+from src.transformerAndRL.tokenizer import BPETokenizer
+from src.transformerAndRL.embeddingTable import EmbeddingTable
 from src.transformerAndRL.transformer import (
     BidirectionalEncoderStack,
     TransformerEncoderLayer,

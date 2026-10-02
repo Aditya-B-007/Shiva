@@ -4,12 +4,12 @@ import json
 import numpy as np
 from typing import List, Dict, Any, Optional
 
-# Ensure project root is in sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.transformerAndRL.tokenizer import BPETokenizer, EmbeddingTable
+from src.transformerAndRL.tokenizer import BPETokenizer
+from src.transformerAndRL.embeddingTable import EmbeddingTable
 from src.transformerAndRL.transformer import BidirectionalEncoderStack, FinalMLP, mean_pooling
 from src.output.optionMatrixConvertor import OptionMatrixConvertor
 from src.output.finalHeadAndOutput import FinalHeadAndOutput
@@ -57,7 +57,6 @@ def encode_text_to_context(
 
 
 def load_jsonl_dataset(filepath: str) -> List[Dict[str, Any]]:
-    """Reads and validates single-JSON-per-line dataset file."""
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Dataset file not found: {filepath}")
 

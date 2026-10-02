@@ -24,14 +24,16 @@ Learns subword merges from a text corpus; encodes strings to integer token ID se
 | `load_from_json(filepath)` | `str` | Alias for `load()` |
 | `from_json(filepath)` | `classmethod → BPETokenizer` | Construct + load in one call |
 
-**Properties:** `vocab_size`, `pad_token_id`
+**Properties:** `vocab_size`, `pad_token_id`, `unk_token_id`, `bos_token_id`, `eos_token_id`
 
 **Special tokens (IDs 0–3):** `<pad>=0`, `<unk>=1`, `<s>=2`, `</s>=3`
 
 ---
 
+### `embeddingTable.py`
+
 **Class: `EmbeddingTable`**
-Lookup table mapping token IDs → dense float32 vectors.
+Lookup table mapping token IDs → dense float32 vectors with analytic gradient accumulation.
 
 | Method | Signature | What it does |
 |---|---|---|
@@ -40,6 +42,8 @@ Lookup table mapping token IDs → dense float32 vectors.
 | `backward(grad_output)` | `[B,T,768]` | Accumulate embedding gradients |
 | `get_weights()` | `→ Dict` | Export `{"embedding_weights": array}` |
 | `set_weights(weights)` | `Dict` | Load from checkpoint dict |
+
+**Properties:** `weights`, `grad_weights`, `vocab_size`, `hidden_dim`, `pad_token_id`
 
 **Constructor params:** `vocab_size`, `hidden_dim=768`, `pad_token_id=0`, `seed=None`
 
