@@ -24,7 +24,7 @@ MODEL_TRAIN_DATA = os.path.join(PROJECT_ROOT, "data", "train_dataset.jsonl")
 TOKENIZER_OUT_PATH = os.path.join(PROJECT_ROOT, "model_artifacts", "tokenizer", "tokenizer.json")
 CHECKPOINT_OUT_PATH = os.path.join(PROJECT_ROOT, "model_artifacts", "checkpoints", "sankalpa_weights.npz")
 
-TARGET_VOCAB_SIZE: int = 500       # Target vocabulary size for BPE
+TARGET_VOCAB_SIZE: int = 5000       # Target vocabulary size for BPE
 DPO_EPOCHS: int = 10               # Epochs for Stage 1 DPO preference learning
 RLCD_EPOCHS: int = 3               # Epochs for Stage 2 RLCD confidence calibration
 DPO_LR: float = 2e-4               # Learning rate for DPO
@@ -42,7 +42,6 @@ def encode_text_to_context(
     embedder: EmbeddingTable,
     encoder: BidirectionalEncoderStack
 ) -> np.ndarray:
-    """Encodes scenario text into a 768-dimensional context vector [1, 768]."""
     token_ids = tokenizer.encode(text)
     if not token_ids:
         token_ids = [tokenizer.unk_token_id if hasattr(tokenizer, "unk_token_id") else 1]
@@ -180,8 +179,12 @@ class TrainingPipeline:
 
     def run_stage1_dpo(self, dataset: List[DPOSample], epochs: int = DPO_EPOCHS) -> List[float]:
         print(f"\n=======================================================")
-        print(f"🚀 Launching Stage 1: DPO Preference Training")
-        print(f"   Samples: {len(dataset)} | Epochs: {epochs} | LR: {self.dpo_trainer.optimizer.lr}")
+        print(f"🚀 [Training Level 1/2] DPO (Direct Preference Optimization)")
+        print(f"   What it does: Teaches the model clinical preferences by steering")
+        print(f"                 the Situation Vector z towards preferred clinical")
+        print(f"                 actions and away from contraindicated/rejected options.")
+        print(f"   Target Layers: FinalMLP & OptionMatrixConvertor")
+        print(f"   Dataset Size : {len(dataset)} preference pairs | Epochs: {epochs} | LR: {self.dpo_trainer.optimizer.lr}")
         print(f"=======================================================")
         history = []
         for epoch in range(epochs):
@@ -195,13 +198,19 @@ class TrainingPipeline:
             avg_loss = total_loss / max(len(dataset), 1)
             avg_margin = total_margin / max(len(dataset), 1)
             history.append(avg_loss)
-            print(f" [Stage 1 - Epoch {epoch + 1}/{epochs}] Mean Loss: {avg_loss:.4f} | Mean Margin: {avg_margin:+.4f}")
+            print(f" [Level 1 - DPO Epoch {epoch + 1}/{epochs}] Loss: {avg_loss:.4f} | Margin: {avg_margin:+.4f} (positive margin = preference learned)")
+        print(f"[✓] Level 1 Complete: DPO preference alignment successfully finished.")
         return history
 
     def run_stage2_rlcd(self, dataset: List[RLCDSample], epochs: int = RLCD_EPOCHS) -> List[float]:
         print(f"\n=======================================================")
-        print(f"🎯 Launching Stage 2: RLCD Domain Calibration")
-        print(f"   Samples: {len(dataset)} | Epochs: {epochs} | LR: {self.rlcd_trainer.optimizer.lr}")
+        print(f"🎯 [Training Level 2/2] RLCD (Confidence & Domain Calibration)")
+        print(f"   What it does: Calibrates the model's confidence scores to match")
+        print(f"                 true probabilities (preventing over- or under-confidence)")
+        print(f"                 by distilling unconstrained student vectors into")
+        print(f"                 calibrated target action representations.")
+        print(f"   Target Layers: W_cal, b_cal Calibration Layer")
+        print(f"   Dataset Size : {len(dataset)} samples | Epochs: {epochs} | LR: {self.rlcd_trainer.optimizer.lr}")
         print(f"=======================================================")
         history = []
         for epoch in range(epochs):
@@ -212,7 +221,8 @@ class TrainingPipeline:
 
             avg_loss = total_loss / max(len(dataset), 1)
             history.append(avg_loss)
-            print(f" [Stage 2 - Epoch {epoch + 1}/{epochs}] Calibration Loss: {avg_loss:.4f}")
+            print(f" [Level 2 - RLCD Epoch {epoch + 1}/{epochs}] Distillation Cross-Entropy Loss: {avg_loss:.4f}")
+        print(f"[✓] Level 2 Complete: Confidence calibration successfully finished.")
         return history
 
     def save_checkpoint(
@@ -316,16 +326,21 @@ def main():
     # 1. Tokenizer Setup (Load if exists, otherwise train)
     tokenizer = BPETokenizer()
     if os.path.exists(TOKENIZER_OUT_PATH):
-        print(f"\n[Step 1/5] Loading existing BPETokenizer from: {TOKENIZER_OUT_PATH}...")
+        print(f"\n[Step 1/5] Tokenizer Initialization")
+        print(f"   What it does: Loads previously trained subword vocabulary.")
+        print(f"   Loading from : {TOKENIZER_OUT_PATH}...")
         tokenizer.load_from_json(TOKENIZER_OUT_PATH)
-        print(f"[✓] Tokenizer loaded (Vocab Size: {tokenizer.vocab_size})")
+        print(f"[✓] Tokenizer ready (Vocabulary Size: {tokenizer.vocab_size} tokens)")
     else:
         if not os.path.exists(TOKENIZER_RAW_DATA):
             raise FileNotFoundError(
                 f"Tokenizer raw data file not found at: '{TOKENIZER_RAW_DATA}'. "
                 f"Please create '{TOKENIZER_RAW_DATA}' with your raw corpus text."
             )
-        print(f"\n[Step 1/5] Training BPETokenizer on raw text: {TOKENIZER_RAW_DATA}...")
+        print(f"\n[Step 1/5] Tokenizer Training (Byte-Pair Encoding)")
+        print(f"   What it does: Reads raw clinical text, computes character pair frequencies,")
+        print(f"                 and iteratively merges them to build medical subwords.")
+        print(f"   Training on  : {TOKENIZER_RAW_DATA} (Target Vocabulary: {TARGET_VOCAB_SIZE} tokens)...")
         tokenizer.train_from_file(TOKENIZER_RAW_DATA, target_vocab_size=TARGET_VOCAB_SIZE)
         tokenizer.save(TOKENIZER_OUT_PATH)
         print(f"[✓] Tokenizer trained (Vocab Size: {tokenizer.vocab_size}) and saved to: {TOKENIZER_OUT_PATH}")
