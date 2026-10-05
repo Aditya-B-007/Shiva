@@ -37,6 +37,9 @@ Output:  🏆 Immediate Cardiac Catheterization Lab Activation  —  94.2% confi
          4. Discharge with pain medication                    —   0.3%
 ```
 
+> [!NOTE]
+> **Domain Agnostic — Medical Baseline:** The current pre-packaged weights and bundled dataset are trained on **Medical data** (clinical triage and emergency interventions). However, Sankalpa is fully domain-agnostic: users can easily train or fine-tune it on **any custom domain** (DevOps/SRE, financial risk, robotics, legal compliance, supply chain, etc.) by supplying their own preference pairs.
+
 ---
 
 ## The Problem It Solves
@@ -56,9 +59,11 @@ Sankalpa is built specifically for the **structured decision layer** — the mom
 
 ## Industry Use Cases
 
+*(Currently baseline-trained on Healthcare/Medical triage; user-trainable on any other vertical)*
+
 | Vertical | Scenario | What Sankalpa does |
 |---|---|---|
-| 🏥 **Healthcare** | Critical care triage with vitals, labs, imaging | Ranks interventions by clinical urgency |
+| 🏥 **Healthcare** *(Current Baseline)* | Critical care triage with vitals, labs, imaging | Ranks interventions by clinical urgency |
 | 🖥️ **DevOps / SRE** | Server temperature spike, DB latency alert, fan failure | Selects automated remediation action |
 | 🚁 **Autonomous Systems** | Drone battery at 6%, headwind 35kn, base 4.2km away | Chooses safest action given constraints |
 | 🤖 **Industrial Robotics** | Sudden force spike on Z-axis during precision insertion | Selects compliant motion recovery strategy |
@@ -87,12 +92,12 @@ Runs on CPU. No GPU required. No CUDA, no Docker, no cloud dependency.
 ### ✅ Zero Framework Lock-In
 Built entirely in **pure NumPy**. No PyTorch, no TensorFlow, no ONNX runtime. Every weight matrix, attention head, and backpropagation step is explicit and readable Python.
 
-### ✅ Fine-Tunable on Your Data
-Two-stage training pipeline included:
+### ✅ Trainable on Any Domain
+While the bundled checkpoint is trained on clinical/medical scenarios, Sankalpa is built to be easily user-trained on **any data or domain**. Two-stage training pipeline included:
 - **Stage 1 — DPO:** Teach the model your preferences with `(scenario, preferred_action, rejected_action)` pairs
 - **Stage 2 — RLCD:** Calibrate confidence scores to match your domain's risk profile
 
-Add 10 labelled examples and retrain in minutes.
+Simply add your scenarios to `data/train_dataset.jsonl` (and optionally domain text to `data/data.txt`) and retrain in minutes.
 
 ### ✅ Inference-Time Reasoning
 Enable `thinking mode` to activate **Monte Carlo Tree Search (MCTS)** — the model runs 64 simulated decision paths using a PUCT policy before committing to a final answer.

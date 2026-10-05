@@ -17,7 +17,8 @@ Raw text corpus used to **train the BPE tokenizer**.
 ### `train_dataset.jsonl`
 Preference dataset for **Stage 1 DPO** and **Stage 2 RLCD** training.
 - One JSON object per line, no trailing commas
-- Currently 7 samples (medical, infrastructure, drone, robotics, finance, etc.)
+- **Current Baseline**: Contains 100 clinical triage and emergency medical decision scenarios.
+- **Domain Agnostic**: Can be replaced or augmented with user-defined scenarios from **any domain** (e.g. DevOps/SRE, financial risk, autonomous systems, robotics, legal compliance, etc.).
 
 **Required schema per line:**
 ```json

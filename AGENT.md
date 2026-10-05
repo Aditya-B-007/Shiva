@@ -3,6 +3,8 @@
 ## What Is This?
 **Sankalpa (110M)** — a pure-NumPy, zero-framework transformer that reads a situation and picks the best action from a candidate list. No PyTorch, no TensorFlow. Every matrix multiply is explicit.
 
+> **Domain & Dataset**: The bundled model weights and dataset are currently trained on **Medical data** (clinical triage & emergency intervention scenarios). However, the engine is fully domain-agnostic and can be user-trained on **any domain** (DevOps, finance, robotics, legal, etc.) by providing custom preference pairs.
+
 ---
 
 ## 30-Second Pipeline
@@ -31,7 +33,7 @@ FinalDecisionOutputDTO   ← winner + full ranked list + confidence metrics
 
 | Folder | Role |
 |---|---|
-| `data/` | Raw training corpus + JSONL preference dataset |
+| `data/` | Raw training corpus + preference dataset (currently medical triage; user-trainable on any domain) |
 | `model_artifacts/` | Saved tokenizer vocab + all weight checkpoints |
 | `src/config/` | All constants, dataclass configs, Pydantic DTOs |
 | `src/dataUpload/` | PDF ingestion + hybrid TF-IDF RAG retriever |
