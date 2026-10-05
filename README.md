@@ -2,14 +2,14 @@
 
 # 🧠 Sankalpa
 
-**A 110M-parameter decision intelligence engine — not a chatbot, a choice-maker.**
+**A 139M-parameter decision intelligence engine — not a chatbot, a choice-maker.**
 
 [![Pure NumPy](https://img.shields.io/badge/Built%20With-Pure%20NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white)](https://numpy.org)
-[![Parameters](https://img.shields.io/badge/Parameters-110M-blueviolet?style=for-the-badge)](https://github.com)
+[![Parameters](https://img.shields.io/badge/Parameters-139M-blueviolet?style=for-the-badge)](https://github.com)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![Stage](https://img.shields.io/badge/Stage-Research-f59e0b?style=for-the-badge)](https://github.com)
-[![Memory](https://img.shields.io/badge/RAM%20(INT8)-110%20MB-ef4444?style=for-the-badge)](https://github.com)
+[![Memory](https://img.shields.io/badge/RAM%20(INT8)-139%20MB-ef4444?style=for-the-badge)](https://github.com)
 [![Framework](https://img.shields.io/badge/Framework-None%20Required-64748b?style=for-the-badge)](https://github.com)
 
 </div>
@@ -83,9 +83,9 @@ Every decision is a matrix multiply you can inspect. The full `[1, K]` probabili
 ### ✅ Extremely Lightweight
 | Precision | Memory |
 |---|---|
-| FP32 | ~441 MB |
-| FP16 / BF16 | ~220 MB |
-| INT8 | **~110 MB** |
+| FP32 | ~555 MB |
+| FP16 / BF16 | ~277 MB |
+| INT8 | **~139 MB** |
 
 Runs on CPU. No GPU required. No CUDA, no Docker, no cloud dependency.
 
@@ -135,9 +135,9 @@ Training will automatically load the saved tokenizer from `model_artifacts/token
 
 </div>
 
-## 🧠 110M Architecture Breakdown
+## 🧠 139M Architecture Breakdown
 
-This section provides a layer-by-layer mathematical and structural summary of the 110 Million parameter model architecture, detailing how input is processed, reasoning occurs, and decisions are made.
+This section provides a layer-by-layer mathematical and structural summary of the 139 Million parameter model architecture, detailing how input is processed, reasoning occurs, and decisions are made.
 
 ---
 
@@ -147,69 +147,73 @@ This section provides a layer-by-layer mathematical and structural summary of th
 | :--- | :--- | :--- | :--- |
 | **1. Embedding Layer** | Word Token Embeddings | $30{,}522 \text{ words} \times 768$ | $23.44$ Million |
 | | Position Embeddings | $512 \text{ positions} \times 768$ | $393{,}216$ |
-| | Token Type (Segment) | $2 \text{ types} \times 768$ | $1{,}536$ |
-| | Embedding LayerNorm | $2 \times 768$ (scale + shift) | $1{,}536$ |
 | **2. 12-Layer Encoder** | Self-Attention ($Q, K, V$) | $12 \text{ layers} \times 3 \times (768^2 + 768)$ | $21.26$ Million |
 | | Attention Output Dense | $12 \text{ layers} \times (768^2 + 768)$ | $7.09$ Million |
 | | Attention LayerNorm | $12 \text{ layers} \times (2 \times 768)$ | $18{,}432$ |
-| | Feed-Forward Layer 1 | $12 \text{ layers} \times (768 \cdot 3072 + 3072)$ | $28.35$ Million |
-| | Feed-Forward Layer 2 | $12 \text{ layers} \times (3072 \cdot 768 + 768)$ | $28.32$ Million |
+| | SwiGLU Gate ($W_{\text{gate}}$) | $12 \text{ layers} \times (768 \cdot 3072 + 3072)$ | $28.35$ Million |
+| | SwiGLU Up ($W_{\text{up}}$) | $12 \text{ layers} \times (768 \cdot 3072 + 3072)$ | $28.35$ Million |
+| | SwiGLU Down ($W_{\text{down}}$) | $12 \text{ layers} \times (3072 \cdot 768 + 768)$ | $28.32$ Million |
 | | Feed-Forward LayerNorm | $12 \text{ layers} \times (2 \times 768)$ | $18{,}432$ |
-| **3. Situation MLP** | Compression Dense 1 | $768 \times 512 + 512$ | $393{,}728$ |
-| | Intermediate LayerNorm | $2 \times 512$ | $1{,}024$ |
-| | Refinement Dense 2 | $512 \times 512 + 512$ | $262{,}656$ |
+| **3. Situation MLP** | SwiGLU Gate ($W_{\text{gate}}$) | $768 \times 512 + 512$ | $393{,}728$ |
+| | SwiGLU Up ($W_{\text{up}}$) | $768 \times 512 + 512$ | $393{,}728$ |
+| | SwiGLU Down ($W_{\text{down}}$) | $512 \times 512 + 512$ | $262{,}656$ |
 | | Final Situation LayerNorm | $2 \times 512$ | $1{,}024$ |
 | **4. Option Converter** | Shared Encoder Weights | Re-uses Component 1 & 2 weights | $0$ (Tied) |
-| | Option Projector MLP | $768 \times 512 + 512$ | $393{,}728$ |
-| **5. Final Head** | Bilinear Alignment ($W$) | $512 \times 512$ matrix | $262{,}144$ |
-| | Learnable Temperature ($\tau$) | $1 \text{ scalar}$ | $1$ |
-| | Parallel MatMul + Softmax | Deterministic Linear Algebra | $0$ (Pure Math) |
-| **TOTAL** | | | $\mathbf{\approx 110.2 \text{ Million}}$ |
+| | Option Projector Linear | $768 \times 512 + 512$ | $393{,}728$ |
+| **5. Final Head** | Learnable Temperature ($\tau$) | $1 \text{ scalar}$ | $1$ |
+| | Cosine Similarity Scoring | $(z / \lVert z \rVert) \cdot (M / \lVert M \rVert)^T / \tau$ | $0$ (Pure Math) |
+| **TOTAL** | | | $\mathbf{\approx 138.7 \text{ Million}}$ |
+
 
 ---
 
 ## ⚙️ Detailed Mathematical Walkthrough
 
 ### 1. Input Embeddings ($\approx 23.8 \text{M Parameters}$)
-The goal is to convert raw token IDs into dense, position-aware vectors.
+The goal is to convert raw token IDs into dense vectors. Position-awareness is handled inside the attention layers via **Rotary Position Embeddings (RoPE)** — not by adding a learned position table to the input.
 
 *   **Token Embeddings:** A lookup table mapping vocabulary tokens to 768-dimensional vectors.
     $$\text{Parameters} = 30{,}522 \times 768 = 23{,}440{,}896$$
-*   **Position Embeddings:** Provides sequential awareness across the context window.
+*   **Position Embeddings:** Learned lookup table providing absolute positional context. RoPE is additionally applied per-head inside attention.
     $$\text{Parameters} = 512 \times 768 = 393{,}216$$
-*   **Segment Embeddings & LayerNorm:** Distinguishes context/query segments and applies normalization.
-    $$\text{Parameters} = (2 \times 768) + (2 \times 768) = 3{,}072$$
 
-### 2. The 12-Layer Transformer Backbone ($\approx 85.0 \text{M Parameters}$)
-This is the core language understanding engine, utilizing self-attention and feed-forward networks.
 
-*   **Self-Attention Sub-Layer:** For each layer, this computes Query ($Q$), Key ($K$), and Value ($V$) projections.
+### 2. The 12-Layer Transformer Backbone ($\approx 113.4 \text{M Parameters}$)
+This is the core language understanding engine, utilizing **8-head** self-attention with **RoPE** and **SwiGLU** feed-forward networks.
+
+*   **Self-Attention Sub-Layer (8 heads, head_dim = 96):** For each layer, this computes Query ($Q$), Key ($K$), and Value ($V$) projections, then RoPE is applied per head before computing attention scores.
     $$\text{Parameters per layer} = 3 \times (768^2 + 768) = 1{,}771{,}776$$
-*   **Attention Output Dense:** Combines the attention outputs across all heads.
+*   **Attention Output Dense:** Combines the attention outputs across all 8 heads.
     $$\text{Parameters per layer} = (768^2 + 768) = 590{,}592$$
-*   **LayerNorm:** Stabilizes activations within the layer.
-    $$\text{Parameters per layer} = 2 \times 768 = 1{,}536$$
-*   **Feed-Forward Network (FFN):** This expands and then contracts the feature representation.
-    *   **Layer 1 (Expansion):** $768 \rightarrow 3{,}072$
+*   **LayerNorm (×2):** One after attention, one after FFN. Stabilizes activations.
+    $$\text{Parameters per layer} = 2 \times (2 \times 768) = 3{,}072$$
+*   **SwiGLU Feed-Forward Network:** Expands and contracts the feature representation using a **gated** activation. Three weight matrices per layer (gate, up, down):
+    *   **Gate ($W_{\text{gate}}$):** $768 \rightarrow 3{,}072$
         $$\text{Parameters per layer} = (768 \times 3{,}072 + 3{,}072) = 2{,}362{,}368$$
-    *   **Layer 2 (Projection):** $3{,}072 \rightarrow 768$
+    *   **Up ($W_{\text{up}}$):** $768 \rightarrow 3{,}072$
+        $$\text{Parameters per layer} = (768 \times 3{,}072 + 3{,}072) = 2{,}362{,}368$$
+    *   **Down ($W_{\text{down}}$):** $3{,}072 \rightarrow 768$
         $$\text{Parameters per layer} = (3{,}072 \times 768 + 768) = 2{,}360{,}064$$
+    *   **Activation:** $\text{FFN}(x) = \bigl(\text{SiLU}(xW_{\text{gate}}) \odot xW_{\text{up}}\bigr) W_{\text{down}}$
 
 **Total Calculation for 12 Layers:**
-$$\text{Total per layer} = 1{,}771{,}776 + 590{,}592 + 1{,}536 + 2{,}362{,}368 + 2{,}360{,}064 + 1{,}536 \approx 7{,}087{,}872$$
-$$\mathbf{\text{Total for 12 layers}} = 12 \times 7{,}087{,}872 \approx \mathbf{85.05 \text{ Million}}$$
+$$\text{Total per layer} = 1{,}771{,}776 + 590{,}592 + 3{,}072 + 2{,}362{,}368 + 2{,}362{,}368 + 2{,}360{,}064 = 9{,}450{,}240$$
+$$\mathbf{\text{Total for 12 layers}} = 12 \times 9{,}450{,}240 \approx \mathbf{113.4 \text{ Million}}$$
 
-### 3. Situation MLP ($\approx 0.66 \text{M Parameters}$)
-This network compresses the rich text representation into a concise, fixed-size state vector ($z$).
 
-*   **Compression Dense 1:**
+### 3. Situation MLP ($\approx 1.05 \text{M Parameters}$)
+This network compresses the rich transformer representation into a concise, fixed-size state vector ($z$) using a **SwiGLU** gated architecture (matching the transformer FFN structure).
+
+*   **SwiGLU Gate ($W_{\text{gate}}$):** Input gate projection $768 \rightarrow 512$.
     $$\text{Parameters} = (768 \times 512) + 512 = 393{,}728$$
-*   **Intermediate LayerNorm:**
-    $$\text{Parameters} = 2 \times 512 = 1{,}024$$
-*   **Refinement Dense 2:**
+*   **SwiGLU Up ($W_{\text{up}}$):** Value projection $768 \rightarrow 512$.
+    $$\text{Parameters} = (768 \times 512) + 512 = 393{,}728$$
+*   **SwiGLU Down ($W_{\text{down}}$):** Output projection $512 \rightarrow 512$.
     $$\text{Parameters} = (512 \times 512) + 512 = 262{,}656$$
+*   **Activation:** $z_{\text{raw}} = \bigl(\text{SiLU}(xW_{\text{gate}}) \odot xW_{\text{up}}\bigr) W_{\text{down}}$
 *   **Final LayerNorm:**
     $$\text{Parameters} = 2 \times 512 = 1{,}024$$
+
 
 ### 4. Option Matrix Converter ($\approx 0.39 \text{M Parameters}$)
 Candidate options are projected into the same vector space as the situation vector by re-using the core encoder components, minimising distributional mismatch.
@@ -217,14 +221,16 @@ Candidate options are projected into the same vector space as the situation vect
 *   **Option Projector MLP:**
     $$\text{Parameters} = (768 \times 512) + 512 = 393{,}728$$
 
-### 5. Final Head ($\approx 0.26 \text{M Parameters}$)
-Computes compatibility scores between the state vector and all options simultaneously.
+### 5. Final Head ($\approx 0 \text{ Learnable Parameters}$)
+Computes compatibility scores between the situation state vector and all option vectors simultaneously using **cosine similarity** — no additional weight matrix is required.
 
-*   **Bilinear Alignment Matrix ($W$):** Captures the feature trade-offs between situation and options.
-    $$\text{Parameters} = 512 \times 512 = 262{,}144$$
-*   **Learnable Temperature ($\tau$):** A single scalar that scales the final probability distribution.
+*   **Cosine Similarity Scoring:** Both the situation vector $z$ and each option vector $m_k$ are L2-normalised, then their dot product is computed in parallel across all $K$ options.
+    $$\text{score}_k = \frac{z}{\lVert z \rVert} \cdot \frac{m_k}{\lVert m_k \rVert}$$
+    $$\text{Parameters} = 0 \text{ (Pure Math)}$$
+*   **Learnable Temperature ($\tau$):** A single scalar that sharpens or flattens the final softmax distribution.
     $$\text{Parameters} = 1$$
-*   **Parallel Matrix Multiplication:** Core computation — matrix product followed by Softmax.
+*   **Softmax Output:** Converts scaled scores to a probability distribution over $K$ options.
+    $$P_k = \text{softmax}\!\left(\frac{\text{score}_k}{\tau}\right), \quad k = 1 \ldots K$$
     $$\text{Parameters} = 0 \text{ (Pure Math)}$$
 
 ---
@@ -233,9 +239,9 @@ Computes compatibility scores between the state vector and all options simultane
 
 | Precision | Bytes/Param | Total Memory |
 |---|---|---|
-| FP32 | 4 | **~440.8 MB** |
-| FP16 / BF16 | 2 | **~220.4 MB** |
-| INT8 | 1 | **~110.2 MB** |
+| FP32 | 4 | **~554.7 MB** |
+| FP16 / BF16 | 2 | **~277.4 MB** |
+| INT8 | 1 | **~138.7 MB** |
 
 This profile is optimised for edge deployment — fitting comfortably within modest consumer hardware or embedded systems with ample headroom for batch processing.
 
@@ -265,7 +271,7 @@ $$\text{Shape: } [\text{Sequence Length} \times \text{Hidden Dimension}]$$
 | **512** (decision) | Situation Vector $z \in \mathbb{R}^{512}$ | Compressed decision state after FinalMLP |
 | **3,072** | FFN Expansion Dimension | Temporary 4× width inside each FFN ($768 \times 4$) |
 | **12** (layers) | Encoder Depth | Stacked Transformer encoder blocks |
-| **12** (heads) | Attention Heads | Parallel contextual relationships per layer |
-| **64** | Head Dimension $d_k$ | Q/K/V vector size per head ($768 / 12$) |
+| **8** (heads) | Attention Heads | Parallel contextual relationships per layer |
+| **96** | Head Dimension $d_k$ | Q/K/V vector size per head ($768 / 8$) |
 | **30,522** | Vocabulary Size | Unique word and sub-word pieces in the BPE tokenizer |
 | **K** | Candidate Options Count | User-supplied choices, forming Options Matrix $[K \times 512]$ |
